@@ -2,6 +2,7 @@
 #include "Utils.hpp"
 #include <sstream>
 #include <cstdlib>
+#include <iostream>
 
 void Parser::validateBraceLine(const std::string& line, char brace) {
     size_t brace_pos = line.find(brace);

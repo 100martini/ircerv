@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <stdexcept>
+#include <iostream>
 
 std::string Utils::trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\n\r");
@@ -85,6 +86,8 @@ bool Utils::isNumber(const std::string& str) {
 
 bool Utils::isValidIPv4(const std::string& host) {
     if (host.empty()) return false;
+    if (host == "localhost") return true;
+    if (host == "*") return true;
     
     std::vector<std::string> parts = split(host, '.');
     if (parts.size() != 4) return false;
@@ -95,7 +98,7 @@ bool Utils::isValidIPv4(const std::string& host) {
         if (parts[i].length() > 1 && parts[i][0] == '0') return false;
         
         int num = std::atoi(parts[i].c_str());
-        if (num < 0 || num > 255) return false;
+        if (num < 0 || num > 255)   return false;
     }
     
     return true;
@@ -132,5 +135,7 @@ bool Utils::isValidHostname(const std::string& host) {
 }
 
 bool Utils::isValidHost(const std::string& host) {
-    return isValidIPv4(host) || isValidHostname(host);
+    if(!isValidIPv4(host) || !isValidHostname(host))
+        return false;
+    return true;
 }

@@ -15,6 +15,7 @@ public:
     static bool isNumber(const std::string& str);
     static bool isValidIPv4(const std::string& host);
     static bool isValidHostname(const std::string& host);
+    static bool isValid(const std::string& host);
     static bool isValidHost(const std::string& host);
 };
 
