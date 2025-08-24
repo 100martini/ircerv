@@ -104,19 +104,22 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
         line = Utils::trim(Utils::removeComment(line));
         if (line.empty()) continue;
         
-        if (line.find("server") == 0) {
-            size_t brace_pos = line.find('{');
-            if (brace_pos != std::string::npos) {
+        if (line == "server" || line == "server {") {
+            if (line == "server {")
                 servers.push_back(parseServer(file));
-            } else {
+            else {
                 std::string next_line;
                 if (std::getline(file, next_line)) {
                     next_line = Utils::trim(Utils::removeComment(next_line));
-                    if (next_line == "{" || next_line.find('{') != std::string::npos)
+                    if (next_line == "{")
                         servers.push_back(parseServer(file));
-                }
+                    else
+                        throw ConfigException("expected '{' after 'server' directive, found: " + next_line);
+                } else
+                    throw ConfigException("unexpected end of file after 'server' directive");
             }
-        }
+        } else if (line.find("server") == 0)
+            throw ConfigException("invalid server directive: " + line + ". use 'server' or 'server {'");
     }
     
     file.close();
