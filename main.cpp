@@ -1,6 +1,11 @@
 #include "parsing/Config.hpp"
 #include <iostream>
 
+#define GREEN "\033[32m"
+#define YELLOW "\033[33m"
+#define RED "\033[31m"
+#define RESET "\033[0m"
+
 int main(int argc, char** argv) {
     try {
         std::string config_file = (argc > 1) ? argv[1] : "webserv.conf";

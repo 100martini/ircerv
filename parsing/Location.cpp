@@ -73,9 +73,8 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
         }
     }
     
-    if (location.methods.empty()) {
+    if (location.methods.empty())
         location.methods.insert("GET");
-    }
     
     return location;
 }

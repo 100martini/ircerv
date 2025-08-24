@@ -17,6 +17,13 @@ std::string Utils::removeComment(const std::string& line) {
     return line;
 }
 
+std::string Utils::removeSemicolon(const std::string& str) {
+    size_t pos = str.find(';');
+    if (pos != std::string::npos)
+        return str.substr(0, pos);
+    return str;
+}
+
 std::vector<std::string> Utils::split(const std::string& str, char delim) {
     std::vector<std::string> tokens;
     std::stringstream ss(str);
@@ -30,37 +37,47 @@ std::vector<std::string> Utils::split(const std::string& str, char delim) {
 }
 
 size_t Utils::parseSize(const std::string& str) {
-    size_t value;
-    char unit = 0;
-    std::stringstream ss(str);
-    
-    ss >> value;
-    if (!ss.eof())
-        ss >> unit;
-    
-    switch (toupper(unit)) {
-        case 'G': 
-            value *= 1024;
-            value *= 1024;
-            value *= 1024;
-            break;
-        case 'M': 
-            value *= 1024;
-            value *= 1024;
-            break;
-        case 'K': 
-            value *= 1024;
-            break;
-        default: 
-            break;
+    if (str.empty()) {
+        throw std::runtime_error("Empty size string");
     }
+    
+    size_t value = 0;
+    std::string num_str;
+    char unit = 0;
+    
+    size_t i = 0;
+    while (i < str.length() && (std::isdigit(str[i]) || str[i] == '.')) {
+        num_str += str[i];
+        i++;
+    }
+    
+    if (i < str.length())
+        unit = str[i];
+    
+    std::stringstream ss(num_str);
+    ss >> value;
+    
+    if (ss.fail())
+        throw std::runtime_error("Invalid size format: " + str);
+    
+    switch (std::toupper(unit)) {
+        case 'G': value *= 1024UL * 1024UL * 1024UL; break;
+        case 'M': value *= 1024UL * 1024UL; break;
+        case 'K': value *= 1024UL; break;
+        case '\0':
+        case 'B':
+            break;
+        default:
+            throw std::runtime_error("Invalid size unit: " + std::string(1, unit));
+    }
+    
     return value;
 }
 
 bool Utils::isNumber(const std::string& str) {
     if (str.empty()) return false;
     for (size_t i = 0; i < str.length(); i++) {
-        if (!isdigit(str[i])) return false;
+        if (!std::isdigit(str[i])) return false;
     }
     return true;
 }
