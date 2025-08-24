@@ -40,6 +40,12 @@ void Config::validate() {
     
     std::set<std::pair<std::string, int> > addresses;
     for (size_t i = 0; i < _servers.size(); i++) {
+        if (_servers[i].port < 1 || _servers[i].port > 65535) {
+            std::stringstream ss;
+            ss << "Invalid port number: " << _servers[i].port;
+            throw ConfigException(ss.str());
+        }
+        
         std::pair<std::string, int> addr(_servers[i].host, _servers[i].port);
         if (addresses.find(addr) != addresses.end()) {
             std::stringstream ss;
@@ -50,6 +56,16 @@ void Config::validate() {
         
         if (_servers[i].locations.empty())
             throw ConfigException("Server block must have at least one location");
+        
+        std::set<std::string> location_paths;
+        for (size_t j = 0; j < _servers[i].locations.size(); j++) {
+            if (location_paths.find(_servers[i].locations[j].path) != location_paths.end()) {
+                std::stringstream ss;
+                ss << "Duplicate location path in server: " << _servers[i].locations[j].path;
+                throw ConfigException(ss.str());
+            }
+            location_paths.insert(_servers[i].locations[j].path);
+        }
     }
 }
 

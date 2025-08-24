@@ -38,8 +38,6 @@ private:
     std::vector<ServerConfig> _servers;
     std::string _config_file;
     
-    void validateServers();  
-    
 public:
     Config();
     Config(const std::string& config_file);

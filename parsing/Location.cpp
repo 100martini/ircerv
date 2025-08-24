@@ -31,43 +31,50 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
         if (directive == "methods") {
             std::string method;
             while (iss >> method) {
-                method = method.substr(0, method.find(';'));
+                method = Utils::removeSemicolon(method);
                 if (!method.empty())
                     location.methods.insert(method);
             }
         }
         else if (directive == "root") {
             iss >> location.root;
-            location.root = location.root.substr(0, location.root.find(';'));
+            location.root = Utils::removeSemicolon(location.root);
         }
         else if (directive == "index") {
             std::string idx;
-            iss >> idx;
-            location.index = idx.substr(0, idx.find(';'));
+            location.index.clear();
+            while (iss >> idx) {
+                idx = Utils::removeSemicolon(idx);
+                if (!idx.empty()) {
+                    if (!location.index.empty()) location.index += " ";
+                    location.index += idx;
+                }
+            }
         }
         else if (directive == "autoindex") {
             std::string value;
             iss >> value;
+            value = Utils::removeSemicolon(value);
             location.autoindex = (value == "on");
         }
         else if (directive == "upload_path") {
             iss >> location.upload_path;
-            location.upload_path = location.upload_path.substr(0, location.upload_path.find(';'));
+            location.upload_path = Utils::removeSemicolon(location.upload_path);
         }
         else if (directive == "return") {
             iss >> location.redirect.first >> location.redirect.second;
-            location.redirect.second = location.redirect.second.substr(0, location.redirect.second.find(';'));
+            location.redirect.second = Utils::removeSemicolon(location.redirect.second);
         }
         else if (directive == "cgi") {
             std::string ext, handler;
             iss >> ext >> handler;
-            handler = handler.substr(0, handler.find(';'));
+            handler = Utils::removeSemicolon(handler);
             location.cgi[ext] = handler;
         }
         else if (directive == "client_max_body_count") {
             std::string size;
             iss >> size;
-            size = size.substr(0, size.find(';'));
+            size = Utils::removeSemicolon(size);
             location.client_max_body_count = Utils::parseSize(size);
             location.has_body_count = true;
         }
@@ -75,6 +82,9 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
     
     if (location.methods.empty())
         location.methods.insert("GET");
+    
+    if (location.index.empty())
+        location.index = "index.html"; 
     
     return location;
 }

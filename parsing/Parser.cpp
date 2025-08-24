@@ -1,4 +1,3 @@
-// Parser.cpp - Improved version
 #include "Parser.hpp"
 #include "Utils.hpp"
 #include <sstream>
