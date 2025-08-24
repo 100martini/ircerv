@@ -3,6 +3,36 @@
 #include <sstream>
 #include <cstdlib>
 
+void Parser::validateBraceLine(const std::string& line, char brace) {
+    size_t brace_pos = line.find(brace);
+    if (brace_pos != std::string::npos) {
+        std::string after_brace = line.substr(brace_pos + 1);
+        after_brace = Utils::trim(after_brace);
+        if (!after_brace.empty())
+            throw ConfigException("unexpected tokens after '" + std::string(1, brace) + "': " + after_brace);
+        if (brace == '}') {
+            std::string before_brace = line.substr(0, brace_pos);
+            before_brace = Utils::trim(before_brace);
+            if (!before_brace.empty())
+                throw ConfigException("unexpected tokens before '}': " + before_brace);
+        }
+    }
+}
+
+void Parser::validateDirectiveLine(const std::string& line, const std::string& directive) {
+    if (directive == "location" || directive == "server" || directive == "}" || directive == "{")
+        return;
+    
+    size_t semicolon_pos = line.find(';');
+    if (semicolon_pos == std::string::npos)
+        throw ConfigException("missing semicolon after directive: " + directive);
+    
+    std::string after_semicolon = line.substr(semicolon_pos + 1);
+    after_semicolon = Utils::trim(after_semicolon);
+    if (!after_semicolon.empty())
+        throw ConfigException("unexpected tokens after semicolon: " + after_semicolon);
+}
+
 ServerConfig Parser::parseServer(std::ifstream& file) {
     ServerConfig server;
     std::string line;
@@ -11,6 +41,11 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
     while (std::getline(file, line) && braceCount > 0) {
         line = Utils::trim(Utils::removeComment(line));
         if (line.empty()) continue;
+        
+        if (line.find('{') != std::string::npos)
+            validateBraceLine(line, '{');
+        if (line.find('}') != std::string::npos)
+            validateBraceLine(line, '}');
         
         if (line.find("location") == std::string::npos) {
             size_t open_pos = line.find('{');
@@ -33,9 +68,7 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
         std::string directive;
         iss >> directive;
         
-        if (directive != "location" && line[line.length() - 1] != ';') {
-            throw ConfigException("Missing semicolon after directive: " + directive);
-        }
+        validateDirectiveLine(line, directive);
         
         if (directive == "listen") {
             std::string listen_value;
@@ -79,19 +112,22 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             server.client_max_body_count = Utils::parseSize(size);
         }
         else if (directive == "location") {
-            std::string path, extra;
-            iss >> path >> extra;
-            
-            if (!extra.empty() && extra != "{")
-                throw ConfigException("location directive takes only one path, found extra: " + extra);
+            std::string path;
+            iss >> path;
             
             if (path.empty() || path[0] != '/')
-                throw ConfigException("location path must start with '/': " + path);
+                throw ConfigException("Location path must start with '/': " + path);
             
-            if (path.find("//") != std::string::npos)
-                throw ConfigException("invalid path with consecutive slashes: " + path);
+            size_t brace_pos = line.find('{');
+            bool braceOnSameLine = (brace_pos != std::string::npos);
             
-            bool braceOnSameLine = (line.find('{') != std::string::npos);
+            if (braceOnSameLine) {
+                std::string between = line.substr(line.find(path) + path.length(), brace_pos - line.find(path) - path.length());
+                between = Utils::trim(between);
+                if (!between.empty())
+                    throw ConfigException("unexpected tokens between path and '{': " + between);
+                validateBraceLine(line, '{');
+            }
             
             server.locations.push_back(parseLocation(file, path, braceOnSameLine));
         }
@@ -105,36 +141,42 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
     std::ifstream file(filename.c_str());
     
     if (!file.is_open())
-        throw ConfigException("cannot open config file: " + filename);
+        throw ConfigException("Cannot open config file: " + filename);
 
     std::string line;
     while (std::getline(file, line)) {
         line = Utils::trim(Utils::removeComment(line));
         if (line.empty()) continue;
         
-        if (line == "server" || line == "server {") {
-            if (line == "server {")
+        if (line.find("server") == 0) {
+            size_t brace_pos = line.find('{');
+            if (brace_pos != std::string::npos) {
+                std::string between = line.substr(6, brace_pos - 6);
+                between = Utils::trim(between);
+                if (!between.empty())
+                    throw ConfigException("unexpected tokens between 'server' and '{': " + between);
+                validateBraceLine(line, '{');
                 servers.push_back(parseServer(file));
-            else {
+            } else if (line == "server") {
                 std::string next_line;
                 if (std::getline(file, next_line)) {
                     next_line = Utils::trim(Utils::removeComment(next_line));
                     if (next_line == "{")
                         servers.push_back(parseServer(file));
                     else
-                        throw ConfigException("expected '{' after 'server' directive, found: " + next_line);
-                }
-                else
-                    throw ConfigException("unexpected end of file after 'server' directive");
-            }
-        } else if (line.find("server") == 0)
-            throw ConfigException("invalid server directive: " + line + ". use 'server' or 'server {'");
+                        throw ConfigException("expected '{' after 'server', found: " + next_line);
+                } else
+                    throw ConfigException("unexpected end of file after 'server'");
+            } else
+                throw ConfigException("invalid server directive: " + line);
+        } else
+            throw ConfigException("unexpected token outside server block: " + line);
     }
     
     file.close();
     
     if (servers.empty())
-        throw ConfigException("no valid server blocks found in configuration file");
+        throw ConfigException("No valid server blocks found in configuration file");
     
     return servers;
 }

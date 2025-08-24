@@ -14,10 +14,13 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
     else {
         if (std::getline(file, line)) {
             line = Utils::trim(Utils::removeComment(line));
-            if (line.find('{') != std::string::npos) {
+            if (line == "{")
+                braceCount = 1;
+            else if (line.find('{') != std::string::npos) {
+                validateBraceLine(line, '{');
                 braceCount = 1;
             } else
-                throw ConfigException("expected '{' after location directive");
+                throw ConfigException("expected '{' after location directive, found: " + line);
         }
     }
     
@@ -25,17 +28,16 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
         line = Utils::trim(Utils::removeComment(line));
         if (line.empty()) continue;
         
-        size_t open_pos = line.find('{');
-        while (open_pos != std::string::npos) {
+        if (line.find('{') != std::string::npos) {
+            validateBraceLine(line, '{');
             braceCount++;
-            open_pos = line.find('{', open_pos + 1);
         }
         
-        size_t close_pos = line.find('}');
-        while (close_pos != std::string::npos) {
+        if (line.find('}') != std::string::npos) {
+            validateBraceLine(line, '}');
             braceCount--;
-            if (braceCount == 0) break;
-            close_pos = line.find('}', close_pos + 1);
+            if (braceCount == 0) break; 
+            continue;
         }
         
         if (braceCount == 0) break;
@@ -44,58 +46,89 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
         std::string directive;
         iss >> directive;
         
-        if (line[line.length() - 1] != ';')
-            throw ConfigException("missing semicolon after directive: " + directive);
+        validateDirectiveLine(line, directive);
         
         if (directive == "methods") {
             std::string method;
             while (iss >> method) {
                 method = Utils::removeSemicolon(method);
-                if (!method.empty())
+                if (!method.empty()) {
+                    if (method != "GET" && method != "POST" && method != "DELETE" && 
+                        method != "PUT" && method != "HEAD" && method != "OPTIONS" &&
+                        method != "PATCH" && method != "TRACE" && method != "CONNECT") {
+                        throw ConfigException("invalid HTTP method: " + method);
+                    }
                     location.methods.insert(method);
+                }
             }
         }
         else if (directive == "root") {
             iss >> location.root;
             location.root = Utils::removeSemicolon(location.root);
+            if (location.root.empty())
+                throw ConfigException("root directive requires a path");
         }
         else if (directive == "index") {
             std::string idx;
             location.index.clear();
+            bool has_index = false;
             while (iss >> idx) {
                 idx = Utils::removeSemicolon(idx);
                 if (!idx.empty()) {
                     if (!location.index.empty()) location.index += " ";
                     location.index += idx;
+                    has_index = true;
                 }
             }
+            if (!has_index)
+                throw ConfigException("index directive requires at least one file");
         }
         else if (directive == "autoindex") {
             std::string value;
             iss >> value;
             value = Utils::removeSemicolon(value);
+            if (value != "on" && value != "off")
+                throw ConfigException("autoindex must be 'on' or 'off', got: " + value);
             location.autoindex = (value == "on");
         }
         else if (directive == "upload_path") {
             iss >> location.upload_path;
             location.upload_path = Utils::removeSemicolon(location.upload_path);
+            if (location.upload_path.empty())
+                throw ConfigException("upload_path directive requires a path");
         }
         else if (directive == "return") {
-            iss >> location.redirect.first >> location.redirect.second;
+            std::string code_str;
+            iss >> code_str >> location.redirect.second;
+            location.redirect.first = std::atoi(code_str.c_str());
             location.redirect.second = Utils::removeSemicolon(location.redirect.second);
+            
+            if (location.redirect.first < 300 || location.redirect.first > 399)
+                throw ConfigException("return directive requires a 3xx status code");
+            if (location.redirect.second.empty())
+                throw ConfigException("return directive requires a URL");
         }
         else if (directive == "cgi") {
             std::string ext, handler;
             iss >> ext >> handler;
             handler = Utils::removeSemicolon(handler);
+            if (ext.empty() || handler.empty())
+                throw ConfigException("cgi directive requires extension and handler");
+            if (ext[0] != '.')
+                throw ConfigException("cgi extension must start with '.': " + ext);
             location.cgi[ext] = handler;
         }
         else if (directive == "client_max_body_count") {
             std::string size;
             iss >> size;
             size = Utils::removeSemicolon(size);
+            if (size.empty())
+                throw ConfigException("client_max_body_count requires a size");
             location.client_max_body_count = Utils::parseSize(size);
             location.has_body_count = true;
+        }
+        else {
+            throw ConfigException("Unknown directive in location block: " + directive);
         }
     }
     
