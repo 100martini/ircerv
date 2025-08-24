@@ -3,26 +3,42 @@
 #include <sstream>
 #include <cstdlib>
 
-LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& path) {
+LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& path, bool braceOnSameLine) {
     LocationConfig location;
     location.path = path;
     std::string line;
     int braceCount = 0;
     
-    std::getline(file, line);
-    line = Utils::trim(Utils::removeComment(line));
-    if (line.find('{') != std::string::npos) braceCount = 1;
+    if (braceOnSameLine)
+        braceCount = 1;
+    else {
+        if (std::getline(file, line)) {
+            line = Utils::trim(Utils::removeComment(line));
+            if (line.find('{') != std::string::npos) {
+                braceCount = 1;
+            } else
+                throw ConfigException("Expected '{' after location directive");
+        }
+    }
     
     while (std::getline(file, line) && braceCount > 0) {
         line = Utils::trim(Utils::removeComment(line));
         if (line.empty()) continue;
         
-        if (line.find('{') != std::string::npos) braceCount++;
-        if (line.find('}') != std::string::npos) {
+        size_t open_pos = line.find('{');
+        while (open_pos != std::string::npos) {
+            braceCount++;
+            open_pos = line.find('{', open_pos + 1);
+        }
+        
+        size_t close_pos = line.find('}');
+        while (close_pos != std::string::npos) {
             braceCount--;
             if (braceCount == 0) break;
-            continue;
+            close_pos = line.find('}', close_pos + 1);
         }
+        
+        if (braceCount == 0) break;
         
         std::istringstream iss(line);
         std::string directive;

@@ -12,13 +12,22 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
         line = Utils::trim(Utils::removeComment(line));
         if (line.empty()) continue;
         
-        if (line.find('{') != std::string::npos && line.find("location") == std::string::npos) 
-            braceCount++;
-        if (line.find('}') != std::string::npos) {
+        if (line.find("location") == std::string::npos) {
+            size_t open_pos = line.find('{');
+            while (open_pos != std::string::npos) {
+                braceCount++;
+                open_pos = line.find('{', open_pos + 1);
+            }
+        }
+        
+        size_t close_pos = line.find('}');
+        while (close_pos != std::string::npos) {
             braceCount--;
             if (braceCount == 0) break;
-            continue;
+            close_pos = line.find('}', close_pos + 1);
         }
+        
+        if (braceCount == 0) break;
         
         std::istringstream iss(line);
         std::string directive;
@@ -35,9 +44,8 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             if (colon_pos != std::string::npos) {
                 server.host = listen_value.substr(0, colon_pos);
                 server.port = std::atoi(listen_value.substr(colon_pos + 1).c_str());
-            } else {
+            } else
                 server.port = std::atoi(listen_value.c_str());
-            }
         }
         else if (directive == "host") {
             iss >> server.host;
@@ -75,7 +83,9 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             if (path.empty() || path[0] != '/')
                 throw ConfigException("Location path must start with '/': " + path);
             
-            server.locations.push_back(parseLocation(file, path));
+            bool braceOnSameLine = (line.find('{') != std::string::npos);
+            
+            server.locations.push_back(parseLocation(file, path, braceOnSameLine));
         }
     }
     
@@ -96,13 +106,13 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
         
         if (line.find("server") == 0) {
             size_t brace_pos = line.find('{');
-            if (brace_pos != std::string::npos)
+            if (brace_pos != std::string::npos) {
                 servers.push_back(parseServer(file));
-            else {
+            } else {
                 std::string next_line;
                 if (std::getline(file, next_line)) {
                     next_line = Utils::trim(Utils::removeComment(next_line));
-                    if (next_line == "{")
+                    if (next_line == "{" || next_line.find('{') != std::string::npos)
                         servers.push_back(parseServer(file));
                 }
             }

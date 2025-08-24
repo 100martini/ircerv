@@ -10,7 +10,7 @@ class Parser {
 public:
     static std::vector<ServerConfig> parseConfigFile(const std::string& filename);
     static ServerConfig parseServer(std::ifstream& file);
-    static LocationConfig parseLocation(std::ifstream& file, const std::string& path);
+    static LocationConfig parseLocation(std::ifstream& file, const std::string& path, bool braceOnSameLine = false);
 };
 
 #endif
