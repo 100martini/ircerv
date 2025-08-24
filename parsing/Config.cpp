@@ -78,7 +78,7 @@ std::vector<ServerConfig>& Config::getServers() {
 }
 
 ConfigException::ConfigException(const std::string& msg) 
-    : _msg("Config Error: " + msg) {}
+    : _msg("Config Error:: " + msg + RESET) {}
 
 ConfigException::~ConfigException() throw() {}
 

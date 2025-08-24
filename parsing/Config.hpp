@@ -1,5 +1,9 @@
 #ifndef CONFIG_HPP
 #define CONFIG_HPP
+#define GREEN "\033[32m"
+#define YELLOW "\033[33m"
+#define RED "\033[31m"
+#define RESET "\033[0m"
 
 #include <string>
 #include <vector>
