@@ -44,6 +44,9 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
         std::string directive;
         iss >> directive;
         
+        if (line[line.length() - 1] != ';')
+            throw ConfigException("missing semicolon after directive: " + directive);
+        
         if (directive == "methods") {
             std::string method;
             while (iss >> method) {

@@ -33,12 +33,14 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
         std::string directive;
         iss >> directive;
         
+        if (directive != "location" && line[line.length() - 1] != ';') {
+            throw ConfigException("Missing semicolon after directive: " + directive);
+        }
+        
         if (directive == "listen") {
             std::string listen_value;
             iss >> listen_value;
-            size_t semicolon_pos = listen_value.find(';');
-            if (semicolon_pos != std::string::npos)
-                listen_value = listen_value.substr(0, semicolon_pos);
+            listen_value = Utils::removeSemicolon(listen_value);
             
             size_t colon_pos = listen_value.find(':');
             if (colon_pos != std::string::npos) {
@@ -77,11 +79,17 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             server.client_max_body_count = Utils::parseSize(size);
         }
         else if (directive == "location") {
-            std::string path;
-            iss >> path;
+            std::string path, extra;
+            iss >> path >> extra;
+            
+            if (!extra.empty() && extra != "{")
+                throw ConfigException("location directive takes only one path, found extra: " + extra);
             
             if (path.empty() || path[0] != '/')
                 throw ConfigException("location path must start with '/': " + path);
+            
+            if (path.find("//") != std::string::npos)
+                throw ConfigException("invalid path with consecutive slashes: " + path);
             
             bool braceOnSameLine = (line.find('{') != std::string::npos);
             
@@ -115,7 +123,8 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
                         servers.push_back(parseServer(file));
                     else
                         throw ConfigException("expected '{' after 'server' directive, found: " + next_line);
-                } else
+                }
+                else
                     throw ConfigException("unexpected end of file after 'server' directive");
             }
         } else if (line.find("server") == 0)
