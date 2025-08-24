@@ -2,6 +2,7 @@
 #include <sstream>
 #include <cctype>
 #include <cstdlib>
+#include <stdexcept> 
 
 std::string Utils::trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\n\r");
@@ -46,7 +47,7 @@ size_t Utils::parseSize(const std::string& str) {
     char unit = 0;
     
     size_t i = 0;
-    while (i < str.length() && (std::isdigit(str[i]) || str[i] == '.')) {
+    while (i < str.length() && (::isdigit(str[i]) || str[i] == '.')) { 
         num_str += str[i];
         i++;
     }
@@ -60,7 +61,7 @@ size_t Utils::parseSize(const std::string& str) {
     if (ss.fail())
         throw std::runtime_error("Invalid size format: " + str);
     
-    switch (std::toupper(unit)) {
+    switch (::toupper(unit)) { 
         case 'G': value *= 1024UL * 1024UL * 1024UL; break;
         case 'M': value *= 1024UL * 1024UL; break;
         case 'K': value *= 1024UL; break;
@@ -77,7 +78,7 @@ size_t Utils::parseSize(const std::string& str) {
 bool Utils::isNumber(const std::string& str) {
     if (str.empty()) return false;
     for (size_t i = 0; i < str.length(); i++) {
-        if (!std::isdigit(str[i])) return false;
+        if (!::isdigit(str[i])) return false;
     }
     return true;
 }
