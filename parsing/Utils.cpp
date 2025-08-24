@@ -39,7 +39,7 @@ std::vector<std::string> Utils::split(const std::string& str, char delim) {
 
 size_t Utils::parseSize(const std::string& str) {
     if (str.empty()) {
-        throw std::runtime_error("Empty size string");
+        throw std::runtime_error("empty size string");
     }
     
     size_t value = 0;
@@ -59,7 +59,7 @@ size_t Utils::parseSize(const std::string& str) {
     ss >> value;
     
     if (ss.fail())
-        throw std::runtime_error("Invalid size format: " + str);
+        throw std::runtime_error("invalid size format: " + str);
     
     switch (::toupper(unit)) { 
         case 'G': value *= 1024UL * 1024UL * 1024UL; break;
@@ -69,7 +69,7 @@ size_t Utils::parseSize(const std::string& str) {
         case 'B':
             break;
         default:
-            throw std::runtime_error("Invalid size unit: " + std::string(1, unit));
+            throw std::runtime_error("invalid size unit: " + std::string(1, unit));
     }
     
     return value;

@@ -17,7 +17,7 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
             if (line.find('{') != std::string::npos) {
                 braceCount = 1;
             } else
-                throw ConfigException("Expected '{' after location directive");
+                throw ConfigException("expected '{' after location directive");
         }
     }
     

@@ -81,7 +81,7 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             iss >> path;
             
             if (path.empty() || path[0] != '/')
-                throw ConfigException("Location path must start with '/': " + path);
+                throw ConfigException("location path must start with '/': " + path);
             
             bool braceOnSameLine = (line.find('{') != std::string::npos);
             
@@ -97,7 +97,7 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
     std::ifstream file(filename.c_str());
     
     if (!file.is_open())
-        throw ConfigException("Cannot open config file: " + filename);
+        throw ConfigException("cannot open config file: " + filename);
 
     std::string line;
     while (std::getline(file, line)) {
@@ -122,7 +122,7 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
     file.close();
     
     if (servers.empty())
-        throw ConfigException("No valid server blocks found in configuration file");
+        throw ConfigException("no valid server blocks found in configuration file");
     
     return servers;
 }
