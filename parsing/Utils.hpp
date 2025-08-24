@@ -6,6 +6,9 @@
 #include <stdexcept>
 
 class Utils {
+private:
+    static bool looksLikeIP(const std::string& host);
+    
 public:
     static std::string trim(const std::string& str);
     static std::string removeComment(const std::string& line);
@@ -15,7 +18,6 @@ public:
     static bool isNumber(const std::string& str);
     static bool isValidIPv4(const std::string& host);
     static bool isValidHostname(const std::string& host);
-    static bool isValid(const std::string& host);
     static bool isValidHost(const std::string& host);
 };
 
