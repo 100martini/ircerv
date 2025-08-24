@@ -2,7 +2,7 @@
 #include <sstream>
 #include <cctype>
 #include <cstdlib>
-#include <stdexcept> 
+#include <stdexcept>
 
 std::string Utils::trim(const std::string& str) {
     size_t first = str.find_first_not_of(" \t\n\r");
@@ -47,7 +47,7 @@ size_t Utils::parseSize(const std::string& str) {
     char unit = 0;
     
     size_t i = 0;
-    while (i < str.length() && (::isdigit(str[i]) || str[i] == '.')) { 
+    while (i < str.length() && (::isdigit(str[i]) || str[i] == '.')) {
         num_str += str[i];
         i++;
     }
@@ -61,7 +61,7 @@ size_t Utils::parseSize(const std::string& str) {
     if (ss.fail())
         throw std::runtime_error("invalid size format: " + str);
     
-    switch (::toupper(unit)) { 
+    switch (::toupper(unit)) {
         case 'G': value *= 1024UL * 1024UL * 1024UL; break;
         case 'M': value *= 1024UL * 1024UL; break;
         case 'K': value *= 1024UL; break;
@@ -81,4 +81,56 @@ bool Utils::isNumber(const std::string& str) {
         if (!::isdigit(str[i])) return false;
     }
     return true;
+}
+
+bool Utils::isValidIPv4(const std::string& host) {
+    if (host.empty()) return false;
+    
+    std::vector<std::string> parts = split(host, '.');
+    if (parts.size() != 4) return false;
+    
+    for (size_t i = 0; i < parts.size(); i++) {
+        if (!isNumber(parts[i])) return false;
+        
+        if (parts[i].length() > 1 && parts[i][0] == '0') return false;
+        
+        int num = std::atoi(parts[i].c_str());
+        if (num < 0 || num > 255) return false;
+    }
+    
+    return true;
+}
+
+bool Utils::isValidHostname(const std::string& host) {
+    if (host.empty() || host.length() > 253) return false;
+    
+    if (host == "localhost") return true;
+    if (host == "*") return true;
+    
+    if (host.find('.') == std::string::npos)
+        return false;
+    
+    std::vector<std::string> labels = split(host, '.');
+    if (labels.empty()) return false;
+    
+    for (size_t i = 0; i < labels.size(); i++) {
+        const std::string& label = labels[i];
+        
+        if (label.empty() || label.length() > 63) return false;
+        
+        if (!std::isalnum(label[0]) || !std::isalnum(label[label.length() - 1]))
+            return false;
+        
+        for (size_t j = 0; j < label.length(); j++)
+            if (!std::isalnum(label[j]) && label[j] != '-')
+                return false;
+        
+        if (label.find("--") != std::string::npos) return false;
+    }
+    
+    return true;
+}
+
+bool Utils::isValidHost(const std::string& host) {
+    return isValidIPv4(host) || isValidHostname(host);
 }

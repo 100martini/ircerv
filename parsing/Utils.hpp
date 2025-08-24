@@ -13,6 +13,9 @@ public:
     static std::vector<std::string> split(const std::string& str, char delim);
     static size_t parseSize(const std::string& str);
     static bool isNumber(const std::string& str);
+    static bool isValidIPv4(const std::string& host);
+    static bool isValidHostname(const std::string& host);
+    static bool isValidHost(const std::string& host);
 };
 
 #endif

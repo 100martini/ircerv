@@ -77,14 +77,34 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             
             size_t colon_pos = listen_value.find(':');
             if (colon_pos != std::string::npos) {
-                server.host = listen_value.substr(0, colon_pos);
-                server.port = std::atoi(listen_value.substr(colon_pos + 1).c_str());
-            } else
+                std::string host_part = listen_value.substr(0, colon_pos);
+                std::string port_part = listen_value.substr(colon_pos + 1);
+                
+                if (!Utils::isValidHost(host_part)) {
+                    throw ConfigException("invalid host in listen directive: '" + host_part + 
+                        "' (must be a valid IPv4 address like 127.0.0.1 or domain like example.com)");
+                }
+                server.host = host_part;
+                
+                if (!Utils::isNumber(port_part)) {
+                    throw ConfigException("invalid port in listen directive: '" + port_part + 
+                        "' (must be a number)");
+                }
+                server.port = std::atoi(port_part.c_str());
+            } else {
+                if (!Utils::isNumber(listen_value))
+                    throw ConfigException("invalid port number: '" + listen_value + "'");
                 server.port = std::atoi(listen_value.c_str());
+            }
         }
         else if (directive == "host") {
             iss >> server.host;
             server.host = Utils::removeSemicolon(server.host);
+            
+            if (!Utils::isValidHost(server.host)) {
+                throw ConfigException("invalid host format: '" + server.host + 
+                    "' (must be a valid IPv4 address like 127.0.0.1 or domain like example.com)");
+            }
         }
         else if (directive == "server_name") {
             iss >> server.server_name;
@@ -116,7 +136,7 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             iss >> path;
             
             if (path.empty() || path[0] != '/')
-                throw ConfigException("Location path must start with '/': " + path);
+                throw ConfigException("location path must start with '/': " + path);
             
             size_t brace_pos = line.find('{');
             bool braceOnSameLine = (brace_pos != std::string::npos);
@@ -141,7 +161,7 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
     std::ifstream file(filename.c_str());
     
     if (!file.is_open())
-        throw ConfigException("Cannot open config file: " + filename);
+        throw ConfigException("cannot open config file: " + filename);
 
     std::string line;
     while (std::getline(file, line)) {
@@ -176,7 +196,7 @@ std::vector<ServerConfig> Parser::parseConfigFile(const std::string& filename) {
     file.close();
     
     if (servers.empty())
-        throw ConfigException("No valid server blocks found in configuration file");
+        throw ConfigException("no valid server blocks found in configuration file");
     
     return servers;
 }
