@@ -102,6 +102,15 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             iss >> server.host;
             server.host = Utils::removeSemicolon(server.host);
             
+            // Check for extra tokens after host value
+            std::string extra_token;
+            if (iss >> extra_token) {
+                extra_token = Utils::removeSemicolon(extra_token);
+                if (!extra_token.empty()) {
+                    throw ConfigException("unexpected token after host directive: '" + extra_token + "'");
+                }
+            }
+            
             if (!Utils::isValidHost(server.host)) {
                 throw ConfigException("invalid host format: '" + server.host + 
                     "' (must be a valid IPv4 address like 127.0.0.1 or domain like example.com)");

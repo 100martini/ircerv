@@ -87,20 +87,37 @@ bool Utils::looksLikeIP(const std::string& host) {
     
     if (parts.empty() || parts.size() == 1) return false;
     
-    for (size_t i = 0; i < parts.size(); i++)
-        if (!isNumber(parts[i])) return false;
+    if (parts.size() == 4) return true;
     
-    return true;
+    bool allNumericLooking = true;
+    for (size_t i = 0; i < parts.size(); i++) {
+        if (!isNumber(parts[i])) {
+            allNumericLooking = false;
+            break;
+        }
+    }
+    
+    return allNumericLooking;
 }
 
 bool Utils::isValidIPv4(const std::string& host) {
     if (host.empty()) return false;
     
-    std::vector<std::string> parts = split(host, '.');
+    if (host[0] == '.' || host[host.length() - 1] == '.') return false;
+    
+    if (host.find("..") != std::string::npos) return false;
+    
+    std::vector<std::string> parts;
+    std::stringstream ss(host);
+    std::string token;
+    while (std::getline(ss, token, '.'))
+        parts.push_back(token);
     
     if (parts.size() != 4) return false;
     
     for (size_t i = 0; i < parts.size(); i++) {
+        if (parts[i].empty()) return false;
+        
         if (!isNumber(parts[i])) return false;
         
         if (parts[i].length() > 1 && parts[i][0] == '0') return false;
@@ -138,10 +155,9 @@ bool Utils::isValidHostname(const std::string& host) {
         if (!std::isalnum(label[0]) || !std::isalnum(label[label.length() - 1]))
             return false;
         
-        for (size_t j = 0; j < label.length(); j++) {
+        for (size_t j = 0; j < label.length(); j++)
             if (!std::isalnum(label[j]) && label[j] != '-')
                 return false;
-        }
         if (label.find("--") != std::string::npos) return false;
     }
     
