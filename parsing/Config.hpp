@@ -20,8 +20,8 @@ struct LocationConfig {
     std::string upload_path;
     std::pair<int, std::string> redirect;
     std::map<std::string, std::string> cgi;
-    size_t client_max_body_count;  // Changed from client_max_body_count
-    bool has_body_count;           // Changed from has_body_count
+    size_t client_max_body_count;
+    bool has_body_count;
     
     LocationConfig();
 };
@@ -31,7 +31,7 @@ struct ServerConfig {
     std::string host;
     std::string server_name;
     std::map<int, std::string> error_pages;
-    size_t client_max_body_count;  // Changed from client_max_body_count
+    size_t client_max_body_count;
     std::vector<LocationConfig> locations;
     
     ServerConfig();

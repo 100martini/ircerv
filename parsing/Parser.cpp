@@ -159,6 +159,9 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             
             server.locations.push_back(parseLocation(file, path, braceOnSameLine));
         }
+        else {
+            throw ConfigException("Unknown directive in server block: " + directive);
+        }
     }
     
     return server;
