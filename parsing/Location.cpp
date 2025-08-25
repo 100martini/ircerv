@@ -53,10 +53,8 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
             while (iss >> method) {
                 method = Utils::removeSemicolon(method);
                 if (!method.empty()) {
-                    if (method != "GET" && method != "POST" && method != "DELETE" && 
-                        method != "PUT" && method != "HEAD" && method != "OPTIONS" &&
-                        method != "PATCH" && method != "TRACE" && method != "CONNECT") {
-                        throw ConfigException("invalid HTTP method: " + method);
+                    if (method != "GET" && method != "POST" && method != "DELETE") {
+                        throw ConfigException("invalid HTTP method: " + method + " (only GET, POST, DELETE are required)");
                     }
                     location.methods.insert(method);
                 }
