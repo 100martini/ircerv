@@ -6,13 +6,13 @@
 LocationConfig::LocationConfig() 
     : autoindex(false), 
       redirect(0, ""), 
-      client_max_body_count(0), 
+      client_max_body_size(0), 
       has_body_count(false) {}
 
 ServerConfig::ServerConfig() 
     : port(80), 
       host("0.0.0.0"), 
-      client_max_body_count(1048576) {}
+      client_max_body_size(1048576) {}
 
 Config::Config() {}
 

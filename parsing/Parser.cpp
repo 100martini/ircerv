@@ -133,11 +133,11 @@ ServerConfig Parser::parseServer(std::ifstream& file) {
             for (size_t i = 0; i < codes.size(); i++)
                 server.error_pages[codes[i]] = page;
         }
-        else if (directive == "client_max_body_count") {
+        else if (directive == "client_max_body_size") {
             std::string size;
             iss >> size;
             size = Utils::removeSemicolon(size);
-            server.client_max_body_count = Utils::parseSize(size);
+            server.client_max_body_size = Utils::parseSize(size);
         }
         else if (directive == "location") {
             std::string path;

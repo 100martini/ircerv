@@ -116,13 +116,13 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
                 throw ConfigException("cgi extension must start with '.': " + ext);
             location.cgi[ext] = handler;
         }
-        else if (directive == "client_max_body_count") {
+        else if (directive == "client_max_body_size") {
             std::string size;
             iss >> size;
             size = Utils::removeSemicolon(size);
             if (size.empty())
-                throw ConfigException("client_max_body_count requires a size");
-            location.client_max_body_count = Utils::parseSize(size);
+                throw ConfigException("client_max_body_size requires a size");
+            location.client_max_body_size = Utils::parseSize(size);
             location.has_body_count = true;
         }
         else {

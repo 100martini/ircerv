@@ -1,6 +1,6 @@
 #include "parsing/Config.hpp"
+#include "server/Server.hpp"
 #include <iostream>
-
 int main(int argc, char** argv) {
     try {
         std::string config_file = (argc > 1) ? argv[1] : "webserv.conf";
@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
             std::cout << GREEN << "server " << i + 1  << ":\n" << RESET;
             std::cout << "  listens on: " << YELLOW << servers[i].host << ":" << servers[i].port << RESET << "\n";
             std::cout << "  name of server: " << servers[i].server_name << "\n";
-            std::cout << "  max_bodycount: " << servers[i].client_max_body_count << " bytes\n";
+            std::cout << "  max_bodycount: " << servers[i].client_max_body_size << " bytes\n";
             std::cout << "  how many " <<   RED << "error pages? " << RESET << servers[i].error_pages.size() << "\n";
             std::cout << "  locations: " << servers[i].locations.size() << "\n";
             
@@ -35,6 +35,10 @@ int main(int argc, char** argv) {
             if(i != servers.size() -1)
                 std::cout << "\n";
         }
+        
+        Server server(servers);
+        server.start();
+        server.run();
         
     } catch (const std::exception& e) {
         std::cerr << RED << "Error: " << e.what() << std::endl;
