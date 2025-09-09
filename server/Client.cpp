@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <cstdlib>
+#include <errno.h>
 
 Client::Client(int _fd, const ServerConfig* config) 
     : fd(_fd), 
@@ -22,49 +23,54 @@ Client::~Client() {
 
 bool Client::readRequest() {
     char buffer[4096];
-    ssize_t bytes = recv(fd, buffer, sizeof(buffer), 0);
     
-    if (bytes > 0) {
-        request_buffer.append(buffer, bytes);
-        last_activity = std::time(NULL);
+    while (true) {
+        ssize_t bytes = recv(fd, buffer, sizeof(buffer), 0);
         
-        if (!headers_complete) {
-            if (checkHeaders()) {
-                headers_complete = true;
-                content_length = getContentLength();
-                
-                if (content_length == 0 && 
-                    request_buffer.find("POST") != 0 && 
-                    request_buffer.find("PUT") != 0)
-                    return true;
-            }
-        }
-        
-        if (headers_complete) {
-            size_t headers_end = request_buffer.find("\r\n\r\n");
-            if (headers_end != std::string::npos) {
-                size_t body_start = headers_end + 4;
-                size_t body_size = request_buffer.length() - body_start;
-                
-                if (body_size > server_config->client_max_body_size) {
-                    buildErrorResponse(413, "request entity too large");
-                    state = SENDING_RESPONSE;
-                    return false;
+        if (bytes > 0) {
+            request_buffer.append(buffer, bytes);
+            last_activity = std::time(NULL);
+            
+            if (!headers_complete) {
+                if (checkHeaders()) {
+                    headers_complete = true;
+                    content_length = getContentLength();
+                    
+                    if (content_length == 0 && 
+                        request_buffer.find("POST") != 0 && 
+                        request_buffer.find("PUT") != 0) {
+                        return true;
+                    }
                 }
-                
-                if (body_size >= content_length)
-                    return true;
+            }
+            
+            if (headers_complete) {
+                size_t headers_end = request_buffer.find("\r\n\r\n");
+                if (headers_end != std::string::npos) {
+                    size_t body_start = headers_end + 4;
+                    size_t body_size = request_buffer.length() - body_start;
+                    
+                    if (body_size > server_config->client_max_body_size) {
+                        buildErrorResponse(413, "request entity too large");
+                        state = SENDING_RESPONSE;
+                        return false;
+                    }
+                    
+                    if (body_size >= content_length)
+                        return true;
+                }
             }
         }
-        return false;
-    }
-    else if (bytes == 0) {
-        state = CLOSING;
-        return false;
-    }
-    else {
-        state = CLOSING;
-        return false;
+        else if (bytes == 0) {
+            state = CLOSING;
+            return false;
+        }
+        else {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return false;
+            state = CLOSING;
+            return false;
+        }
     }
 }
 
@@ -72,24 +78,31 @@ bool Client::sendResponse() {
     if (response_buffer.empty())
         return true;
     
-    ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
-                        response_buffer.length() - bytes_sent, 0);
-    
-    if (bytes > 0) {
-        bytes_sent += bytes;
-        last_activity = std::time(NULL);
-        
-        if (bytes_sent >= response_buffer.length()) {
-            response_buffer.clear();
-            bytes_sent = 0;
-            return true;
+    while (bytes_sent < response_buffer.length()) {
+        ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
+                            response_buffer.length() - bytes_sent, 0);
+        if (bytes > 0) {
+            bytes_sent += bytes;
+            last_activity = std::time(NULL);
+            
+            if (bytes_sent >= response_buffer.length()) {
+                response_buffer.clear();
+                bytes_sent = 0;
+                return true;
+            }
         }
-        return false;
+        else if (bytes == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) //if buffer empty, we got everything, edge-triggered epoll handle
+                return false;
+            state = CLOSING;
+            return false;
+        }
+        else {
+            state = CLOSING;
+            return false;
+        }
     }
-    else {
-        state = CLOSING;
-        return false;
-    }
+    return true;
 }
 
 void Client::processRequest() {

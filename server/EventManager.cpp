@@ -1,100 +1,131 @@
 #include "EventManager.hpp"
 #include <stdexcept>
-#include <cstring>
 #include <unistd.h>
+#include <sstream>
 
-EventManager::EventManager() {}
+EventManager::EventManager() : epoll_fd(-1) {
+    epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (epoll_fd == -1) {
+        throw std::runtime_error("epoll_create1() failed: " + std::string(strerror(errno)));
+    }
+    epoll_events.resize(MAX_EVENTS);
+}
 
-EventManager::~EventManager() {}
+EventManager::~EventManager() {
+    if (epoll_fd != -1) {
+        ::close(epoll_fd);
+    }
+}
 
+//just encaps bcus the server doesn't know or care whether EventManager uses poll or epoll, kisayn wait()
 void EventManager::addFd(int fd, bool monitor_read, bool monitor_write) {
-    if (fd_to_index.find(fd) != fd_to_index.end())
+    if (fd_events.find(fd) != fd_events.end())
         return;
-    
-    struct pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = 0;
-    
+    struct epoll_event ev;
+    ev.events = EPOLLET;
+
     if (monitor_read)
-        pfd.events |= POLLIN;
+        ev.events |= EPOLLIN;
     if (monitor_write)
-        pfd.events |= POLLOUT;
+        ev.events |= EPOLLOUT;
     
-    pfd.revents = 0;
+    ev.data.fd = fd;
     
-    fd_to_index[fd] = pollfds.size();
-    pollfds.push_back(pfd);
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+        std::stringstream ss;
+        ss << "epoll_ctl(ADD) failed for fd " << fd << ": " << strerror(errno);
+        throw std::runtime_error(ss.str());
+    }
+    
+    fd_events[fd] = ev.events;
 }
 
 void EventManager::removeFd(int fd) {
-    std::map<int, size_t>::iterator it = fd_to_index.find(fd);
-    if (it == fd_to_index.end())
+    std::map<int, uint32_t>::iterator it = fd_events.find(fd);
+    if (it == fd_events.end())
         return;
     
-    size_t index = it->second;
-    
-    if (index < pollfds.size() - 1) {
-        pollfds[index] = pollfds.back();
-        fd_to_index[pollfds[index].fd] = index;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
+        if (errno != ENOENT && errno != EBADF) {
+            std::stringstream ss;
+            ss << "epoll_ctl(DEL) failed for fd " << fd << ": " << strerror(errno);
+        }
     }
     
-    pollfds.pop_back();
-    fd_to_index.erase(it);
+    fd_events.erase(it);
 }
 
 void EventManager::setWriteMonitoring(int fd, bool enable) {
-    std::map<int, size_t>::iterator it = fd_to_index.find(fd);
-    if (it == fd_to_index.end())
+    std::map<int, uint32_t>::iterator it = fd_events.find(fd);
+    if (it == fd_events.end())
         return;
     
+    uint32_t new_events = it->second;
+    
     if (enable)
-        pollfds[it->second].events |= POLLOUT;
+        new_events |= EPOLLOUT;
     else
-        pollfds[it->second].events &= ~POLLOUT;
+        new_events &= ~EPOLLOUT;
+    if (new_events != it->second) {
+        modifyFd(fd, new_events);
+        it->second = new_events;
+    }
 }
 
 void EventManager::setReadMonitoring(int fd, bool enable) {
-    std::map<int, size_t>::iterator it = fd_to_index.find(fd);
-    if (it == fd_to_index.end())
+    std::map<int, uint32_t>::iterator it = fd_events.find(fd);
+    if (it == fd_events.end())
         return;
     
+    uint32_t new_events = it->second;
+    
     if (enable)
-        pollfds[it->second].events |= POLLIN;
+        new_events |= EPOLLIN;
     else
-        pollfds[it->second].events &= ~POLLIN;
+        new_events &= ~EPOLLIN;
+    if (new_events != it->second) {
+        modifyFd(fd, new_events);
+        it->second = new_events;
+    }
+}
+
+void EventManager::modifyFd(int fd, uint32_t events) {
+    struct epoll_event ev;
+    ev.events = events;
+    ev.data.fd = fd;
+    
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+        std::stringstream ss;
+        ss << "epoll_ctl(MOD) failed for fd " << fd << ": " << strerror(errno);
+        throw std::runtime_error(ss.str());
+    }
 }
 
 int EventManager::wait(int timeout_ms) {
     events.clear();
     
-    if (pollfds.empty())
+    if (fd_events.empty())
         return 0;
     
-    int ret = poll(&pollfds[0], pollfds.size(), timeout_ms);
+    int nfds = epoll_wait(epoll_fd, &epoll_events[0], MAX_EVENTS, timeout_ms);
     
-    if (ret < 0) {
+    if (nfds == -1) {
         if (errno == EINTR)
             return 0;
-        throw std::runtime_error("poll() failed: " + std::string(strerror(errno)));
+        throw std::runtime_error("epoll_wait() failed: " + std::string(strerror(errno)));
     }
-    
-    if (ret == 0)
-        return 0;
-    
-    for (size_t i = 0; i < pollfds.size(); i++) {
-        if (pollfds[i].revents != 0) {
-            Event e;
-            e.fd = pollfds[i].fd;
-            e.readable = (pollfds[i].revents & POLLIN) != 0;
-            e.writable = (pollfds[i].revents & POLLOUT) != 0;
-            e.error = (pollfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0;
-            events.push_back(e);
-        }
+
+    for (int i = 0; i < nfds; i++) {
+        Event e;
+        e.fd = epoll_events[i].data.fd;
+        e.readable = (epoll_events[i].events & EPOLLIN) != 0;
+        e.writable = (epoll_events[i].events & EPOLLOUT) != 0;
+        e.error = (epoll_events[i].events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) != 0;
+        events.push_back(e);
     }
-    
     return events.size();
 }
 
-bool EventManager::isMonitored(int fd) const {
-    return fd_to_index.find(fd) != fd_to_index.end();
+bool EventManager::isMonitored(int fd) const { //was testing with it, to ignore
+    return fd_events.find(fd) != fd_events.end();
 }

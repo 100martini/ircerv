@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <map>
-#include <poll.h>
+#include <sys/epoll.h>
 #include <cerrno>
 #include <cstring>
 
@@ -17,9 +17,11 @@ public:
     };
     
 private:
-    std::vector<struct pollfd> pollfds;
-    std::map<int, std::size_t> fd_to_index;
+    int epoll_fd;
+    std::vector<struct epoll_event> epoll_events;
+    std::map<int, uint32_t> fd_events;
     std::vector<Event> events;
+    static const int MAX_EVENTS = 1024;
     
 public:
     EventManager();
@@ -33,11 +35,10 @@ public:
     int wait(int timeout_ms = -1);
     
     const std::vector<Event>& getEvents() const { return events; }
-    
     bool isMonitored(int fd) const;
     
 private:
-    void updatePollfd(int fd);
+    void modifyFd(int fd, uint32_t events);
 };
 
 #endif
