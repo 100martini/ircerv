@@ -5,16 +5,14 @@
 
 EventManager::EventManager() : epoll_fd(-1) {
     epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    if (epoll_fd == -1) {
+    if (epoll_fd == -1)
         throw std::runtime_error("epoll_create1() failed: " + std::string(strerror(errno)));
-    }
     epoll_events.resize(MAX_EVENTS);
 }
 
 EventManager::~EventManager() {
-    if (epoll_fd != -1) {
+    if (epoll_fd != -1)
         ::close(epoll_fd);
-    }
 }
 
 //just encaps bcus the server doesn't know or care whether EventManager uses poll or epoll, kisayn wait()
