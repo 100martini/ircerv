@@ -5,7 +5,6 @@
 #include <cstring>
 #include <iostream>
 #include <cstdlib>
-#include <errno.h>
 
 Client::Client(int _fd, const ServerConfig* config) 
     : fd(_fd), 
@@ -66,8 +65,7 @@ bool Client::readRequest() {
             return false;
         }
         else {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-                return false;
+            //with non-blocking sockets, we can't distinguish between EAGAIN/EWOULDBLOCK vs real errors, so we close the connection to be safe
             state = CLOSING;
             return false;
         }
@@ -91,9 +89,8 @@ bool Client::sendResponse() {
                 return true;
             }
         }
-        else if (bytes == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) //if buffer empty, we got everything, edge-triggered epoll handle
-                return false;
+        else if (bytes == 0) {
+            //this shouldn't happen with send() anyways walakin sir 3lah
             state = CLOSING;
             return false;
         }
