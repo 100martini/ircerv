@@ -12,7 +12,8 @@ Client::Client(int _fd, const ServerConfig* config)
       server_config(config),
       bytes_sent(0),
       headers_complete(false),
-      content_length(0) {
+      content_length(0),
+      body_received(0) {
     last_activity = std::time(NULL);
 }
 
@@ -22,78 +23,70 @@ Client::~Client() {
 
 bool Client::readRequest() {
     char buffer[4096];
+    ssize_t bytes = recv(fd, buffer, sizeof(buffer), 0);
     
-    while (true) {
-        ssize_t bytes = recv(fd, buffer, sizeof(buffer), 0);
+    if (bytes > 0) {
+        request_buffer.append(buffer, bytes);
+        last_activity = std::time(NULL);
         
-        if (bytes > 0) {
-            request_buffer.append(buffer, bytes);
-            last_activity = std::time(NULL);
-            
-            if (!headers_complete) {
-                if (checkHeaders()) {
-                    headers_complete = true;
-                    content_length = getContentLength();
-                    
-                    if (content_length == 0 && 
-                        request_buffer.find("POST") != 0 && 
-                        request_buffer.find("PUT") != 0) {
-                        return true;
-                    }
+        if (!headers_complete) {
+            if (checkHeaders()) {
+                headers_complete = true;
+                content_length = getContentLength();
+                body_received = getBodySize();
+                
+                size_t max_size = server_config->client_max_body_size;
+                if (content_length > max_size) {
+                    buildErrorResponse(413, "request entity too large");
+                    state = SENDING_RESPONSE;
+                    return false;
                 }
-            }
-            
-            if (headers_complete) {
-                size_t headers_end = request_buffer.find("\r\n\r\n");
-                if (headers_end != std::string::npos) {
-                    size_t body_start = headers_end + 4;
-                    size_t body_size = request_buffer.length() - body_start;
-                    
-                    if (body_size > server_config->client_max_body_size) {
-                        buildErrorResponse(413, "request entity too large");
-                        state = SENDING_RESPONSE;
-                        return false;
-                    }
-                    
-                    if (body_size >= content_length)
-                        return true;
-                }
+                if (content_length == 0)
+                    return true;
             }
         }
-        else if (bytes == 0) {
-            state = CLOSING;
-            return false;
+        if (headers_complete) {
+            body_received = getBodySize();
+            if (body_received > server_config->client_max_body_size) {
+                buildErrorResponse(413, "request entity too large");
+                state = SENDING_RESPONSE;
+                return false;
+            }        
+            if (body_received >= content_length)
+                return true;
         }
-        else
-            //with non-blocking sockets, we can't distinguish between EAGAIN/EWOULDBLOCK vs real errors, so i dont know if we need to close the connection also here to be safe
-            return false;
+        return false;
     }
+    else if (bytes == 0) {
+        state = CLOSING;
+        return false;
+    }
+    else //with non-blocking sockets, we can't distinguish between EAGAIN/EWOULDBLOCK vs real errors, so i dont know if we need to close the connection also here to be safe
+        return false;
 }
 
 bool Client::sendResponse() {
     if (response_buffer.empty())
         return true;
     
-    while (bytes_sent < response_buffer.length()) {
-        ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
-                            response_buffer.length() - bytes_sent, 0);
-        if (bytes > 0) {
-            bytes_sent += bytes;
-            last_activity = std::time(NULL);
-            
-            if (bytes_sent >= response_buffer.length()) {
-                response_buffer.clear();
-                bytes_sent = 0;
-                return true;
-            }
+    ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
+                        response_buffer.length() - bytes_sent, 0);
+    
+    if (bytes > 0) {
+        bytes_sent += bytes;
+        last_activity = std::time(NULL);
+        
+        if (bytes_sent >= response_buffer.length()) {
+            response_buffer.clear();
+            bytes_sent = 0;
+            return true;
         }
-        else if (bytes == 0)
-            //this shouldn't happen with send() anyways walakin sir 3lah
-            return false;
-        else
-            return false;
+        return false;
     }
-    return true;
+    else if (bytes == 0)
+        return false;
+    else //this shouldn't happen with send() anyways walakin sir 3lah
+        return false;
 }
 
 void Client::processRequest() {
@@ -174,6 +167,18 @@ size_t Client::getContentLength() const {
         
         return std::atoi(length_str.c_str());
     }
+    return 0;
+}
+
+size_t Client::getBodySize() const {
+    size_t headers_end = request_buffer.find("\r\n\r\n");
+    if (headers_end != std::string::npos)
+        return request_buffer.length() - (headers_end + 4);
+    
+    headers_end = request_buffer.find("\n\n");
+    if (headers_end != std::string::npos)
+        return request_buffer.length() - (headers_end + 2);
+    
     return 0;
 }
 

@@ -25,6 +25,7 @@ private:
     size_t bytes_sent;
     bool headers_complete;
     size_t content_length;
+    size_t body_received;
     
 public:
     Client(int _fd, const ServerConfig* config);
@@ -50,6 +51,7 @@ public:
 private:
     bool checkHeaders();
     size_t getContentLength() const;
+    size_t getBodySize() const;
 };
 
 #endif

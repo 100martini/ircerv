@@ -19,9 +19,10 @@ EventManager::~EventManager() {
 void EventManager::addFd(int fd, bool monitor_read, bool monitor_write) {
     if (fd_events.find(fd) != fd_events.end())
         return;
+    
     struct epoll_event ev;
-    ev.events = EPOLLET;
-
+    ev.events = 0;
+    
     if (monitor_read)
         ev.events |= EPOLLIN;
     if (monitor_write)
@@ -49,7 +50,7 @@ void EventManager::removeFd(int fd) {
             ss << "epoll_ctl(DEL) failed for fd " << fd << ": " << strerror(errno);
         }
     }
-    
+
     fd_events.erase(it);
 }
 
@@ -64,6 +65,7 @@ void EventManager::setWriteMonitoring(int fd, bool enable) {
         new_events |= EPOLLOUT;
     else
         new_events &= ~EPOLLOUT;
+    
     if (new_events != it->second) {
         modifyFd(fd, new_events);
         it->second = new_events;
@@ -81,6 +83,7 @@ void EventManager::setReadMonitoring(int fd, bool enable) {
         new_events |= EPOLLIN;
     else
         new_events &= ~EPOLLIN;
+    
     if (new_events != it->second) {
         modifyFd(fd, new_events);
         it->second = new_events;
@@ -112,7 +115,7 @@ int EventManager::wait(int timeout_ms) {
             return 0;
         throw std::runtime_error("epoll_wait() failed: " + std::string(strerror(errno)));
     }
-
+    
     for (int i = 0; i < nfds; i++) {
         Event e;
         e.fd = epoll_events[i].data.fd;
@@ -121,9 +124,11 @@ int EventManager::wait(int timeout_ms) {
         e.error = (epoll_events[i].events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) != 0;
         events.push_back(e);
     }
+    
     return events.size();
 }
 
-bool EventManager::isMonitored(int fd) const { //was testing with it, to ignore
+//was testing with it, to ignore
+bool EventManager::isMonitored(int fd) const {
     return fd_events.find(fd) != fd_events.end();
 }

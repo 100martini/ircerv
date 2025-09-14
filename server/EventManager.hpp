@@ -6,7 +6,6 @@
 #include <sys/epoll.h>
 #include <cerrno>
 #include <cstring>
-
 class EventManager {
 public:
     struct Event {
