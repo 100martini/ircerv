@@ -64,11 +64,9 @@ bool Client::readRequest() {
             state = CLOSING;
             return false;
         }
-        else {
-            //with non-blocking sockets, we can't distinguish between EAGAIN/EWOULDBLOCK vs real errors, so we close the connection to be safe
-            state = CLOSING;
+        else
+            //with non-blocking sockets, we can't distinguish between EAGAIN/EWOULDBLOCK vs real errors, so i dont know if we need to close the connection also here to be safe
             return false;
-        }
     }
 }
 
@@ -89,15 +87,11 @@ bool Client::sendResponse() {
                 return true;
             }
         }
-        else if (bytes == 0) {
+        else if (bytes == 0)
             //this shouldn't happen with send() anyways walakin sir 3lah
-            state = CLOSING;
             return false;
-        }
-        else {
-            state = CLOSING;
+        else
             return false;
-        }
     }
     return true;
 }
