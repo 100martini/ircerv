@@ -26,36 +26,46 @@ bool Client::readRequest() {
     ssize_t bytes = recv(fd, buffer, sizeof(buffer), 0);
     
     if (bytes > 0) {
-        request_buffer.append(buffer, bytes);
         last_activity = std::time(NULL);
         
-        if (!headers_complete) {
-            if (checkHeaders()) {
-                headers_complete = true;
-                content_length = getContentLength();
-                body_received = getBodySize();
-                
-                size_t max_size = server_config->client_max_body_size;
-                if (content_length > max_size) {
-                    buildErrorResponse(413, "request entity too large");
-                    state = SENDING_RESPONSE;
-                    return false;
-                }
-                if (content_length == 0)
-                    return true;
-            }
-        }
-        if (headers_complete) {
-            body_received = getBodySize();
-            if (body_received > server_config->client_max_body_size) {
-                buildErrorResponse(413, "request entity too large");
+        try {
+            int parser_state = http_parser.parseHttpRequest(std::string(buffer, bytes));
+            
+            if (parser_state == COMPLETE)
+                return true;
+            else if (parser_state == ERROR) {
+                buildErrorResponse(400, "Bad Request");
                 state = SENDING_RESPONSE;
                 return false;
-            }        
-            if (body_received >= content_length)
-                return true;
+            }
+            return false;
+            
+        } catch (const HttpRequestException& e) {
+            int error_code = 400;
+            std::string error_msg = "Bad Request";
+            
+            switch(e.error_code()) {
+                case INVALID_METHOD_NAME:
+                    error_code = 405;
+                    error_msg = "Method Not Allowed";
+                    break;
+                case MISSING_CONTENT_LENGTH:
+                case INVALID_CONTENT_LENGTH:
+                    error_code = 411;
+                    error_msg = "Length Required";
+                    break;
+                case DUPLICATE_HEADER:
+                    error_code = 400;
+                    error_msg = "Bad Request - Duplicate Header";
+                    break;
+                default:
+                    break;
+            }
+            
+            buildErrorResponse(error_code, error_msg);
+            state = SENDING_RESPONSE;
+            return false;
         }
-        return false;
     }
     else if (bytes == 0) {
         state = CLOSING;
@@ -90,19 +100,26 @@ bool Client::sendResponse() {
 }
 
 void Client::processRequest() {
-    std::string method, path, version;
-    std::istringstream iss(request_buffer);
-    iss >> method >> path >> version;
+    const HttpRequest& request = http_parser.getRequest();
+    
+    std::string method = request.getMethod();
+    std::string path = request.getPath();
+    std::string version = request.getVersion();
+    std::string query = request.getQueryString();
     
     std::cout << "Request: " << method << " " << path << " " << version << std::endl;
+    if (!query.empty()) {
+        std::cout << "Query string: " << query << std::endl;
+    }
     
     std::stringstream html;
     html << "<!DOCTYPE html>\n";
     html << "<html><head><title>ircerv</title></head>\n";
     html << "<body>\n";
-    html << "<h1>Our server is running!</h1>\n";
-    html << "<p>You requested: " << path << "</p>\n";
+    html << "<h1>Request Successfully Parsed!</h1>\n";
     html << "<p>Method: " << method << "</p>\n";
+    html << "<p>Path: " << path << "</p>\n";
+    html << "<p>Query: " << (query.empty() ? "none" : query) << "</p>\n";
     html << "<p>Server: " << server_config->server_name << "</p>\n";
     html << "<p>Port: " << server_config->port << "</p>\n";
     html << "</body></html>\n";

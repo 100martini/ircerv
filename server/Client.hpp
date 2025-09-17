@@ -1,3 +1,4 @@
+// In server/Client.hpp
 #ifndef CLIENT_HPP
 #define CLIENT_HPP
 
@@ -5,6 +6,7 @@
 #include <vector>
 #include <ctime>
 #include "../parsing/Config.hpp"
+#include "../http/HttpParser.hpp"
 
 class Client {
 public:
@@ -26,6 +28,7 @@ private:
     bool headers_complete;
     size_t content_length;
     size_t body_received;
+    HttpParser http_parser;
     
 public:
     Client(int _fd, const ServerConfig* config);
