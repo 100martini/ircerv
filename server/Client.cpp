@@ -1,6 +1,10 @@
 #include "Client.hpp"
+#include "../http/HttpResponse.hpp"
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <fstream>
 #include <sstream>
 #include <cstring>
 #include <iostream>
@@ -10,10 +14,7 @@ Client::Client(int _fd, const ServerConfig* config)
     : fd(_fd), 
       state(READING_REQUEST), 
       server_config(config),
-      bytes_sent(0),
-      headers_complete(false),
-      content_length(0),
-      body_received(0) {
+      bytes_sent(0) {
     last_activity = std::time(NULL);
 }
 
@@ -71,7 +72,7 @@ bool Client::readRequest() {
         state = CLOSING;
         return false;
     }
-    else //with non-blocking sockets, we can't distinguish between EAGAIN/EWOULDBLOCK vs real errors, so i dont know if we need to close the connection also here to be safe
+    else
         return false;
 }
 
@@ -81,7 +82,7 @@ bool Client::sendResponse() {
     
     ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
                         response_buffer.length() - bytes_sent, 0);
-    
+
     if (bytes > 0) {
         bytes_sent += bytes;
         last_activity = std::time(NULL);
@@ -95,37 +96,182 @@ bool Client::sendResponse() {
     }
     else if (bytes == 0)
         return false;
-    else //this shouldn't happen with send() anyways walakin sir 3lah
+    else
         return false;
 }
 
 void Client::processRequest() {
     const HttpRequest& request = http_parser.getRequest();
+    HttpResponse response;
     
     std::string method = request.getMethod();
     std::string path = request.getPath();
     std::string version = request.getVersion();
-    std::string query = request.getQueryString();
     
-    std::cout << "Request: " << method << " " << path << " " << version << std::endl;
-    if (!query.empty()) {
-        std::cout << "Query string: " << query << std::endl;
+    LocationConfig* location = findMatchingLocation(path);
+    
+    if (!location) {
+        response = HttpResponse::makeError(404);
+        response_buffer = response.toString();
+        state = SENDING_RESPONSE;
+        return;
     }
     
-    std::stringstream html;
-    html << "<!DOCTYPE html>\n";
-    html << "<html><head><title>ircerv</title></head>\n";
-    html << "<body>\n";
-    html << "<h1>Request Successfully Parsed!</h1>\n";
-    html << "<p>Method: " << method << "</p>\n";
-    html << "<p>Path: " << path << "</p>\n";
-    html << "<p>Query: " << (query.empty() ? "none" : query) << "</p>\n";
-    html << "<p>Server: " << server_config->server_name << "</p>\n";
-    html << "<p>Port: " << server_config->port << "</p>\n";
-    html << "</body></html>\n";
+    if (location->methods.find(method) == location->methods.end()) {
+        response.setStatus(405);
+        std::vector<std::string> allowed_methods(location->methods.begin(), 
+                                                 location->methods.end());
+        response.setAllow(allowed_methods);
+        response.setContentType("text/html");
+        std::stringstream html;
+        html << "<!DOCTYPE html>\n";
+        html << "<html><head><title>405 Method Not Allowed</title></head>\n";
+        html << "<body><h1>405 Method Not Allowed</h1>\n";
+        html << "<p>The requested method " << method << " is not allowed for this resource.</p>\n";
+        html << "</body></html>\n";
+        response.setBody(html.str());
+        response_buffer = response.toString();
+        state = SENDING_RESPONSE;
+        return;
+    }
     
-    buildSimpleResponse(html.str());
+    if (location->redirect.first > 0) {
+        response = HttpResponse::makeRedirect(location->redirect.first, 
+                                             location->redirect.second);
+        response_buffer = response.toString();
+        state = SENDING_RESPONSE;
+        return;
+    }
+    
+    if (method == "GET")
+        handleGetRequest(request, location, response);
+    else if (method == "POST")
+        handlePostRequest(request, location, response);
+    else if (method == "DELETE")
+        handleDeleteRequest(request, location, response);
+    response_buffer = response.toString();
     state = SENDING_RESPONSE;
+}
+
+void Client::handleGetRequest(const HttpRequest& request, 
+                              LocationConfig* location, 
+                              HttpResponse& response) {
+    std::string full_path = location->root + request.getPath();
+    
+    struct stat file_stat;
+    if (stat(full_path.c_str(), &file_stat) == -1) {
+        response = HttpResponse::makeError(404);
+        return;
+    }
+    
+    if (S_ISDIR(file_stat.st_mode)) {
+        if (full_path[full_path.length() - 1] != '/')
+            full_path += '/';
+        bool index_served = false;
+        if (!location->index.empty()) {
+            std::istringstream iss(location->index);
+            std::string index_file;
+            while (iss >> index_file) {
+                std::string index_path = full_path + index_file;
+                if (stat(index_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
+                    serveFile(index_path, response);
+                    index_served = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!index_served) {
+            if (location->autoindex) {
+                std::string listing = generateDirectoryListing(full_path, request.getPath());
+                response.setStatus(200);
+                response.setContentType("text/html");
+                response.setBody(listing);
+            } else
+                response = HttpResponse::makeError(403, "Directory listing forbidden");
+        }
+    } else
+        serveFile(full_path, response);
+}
+
+void Client::handlePostRequest(const HttpRequest& request,
+                               LocationConfig* location,
+                               HttpResponse& response) {
+    (void)request;
+    (void)location;
+    response.setStatus(501);
+    response.setContentType("text/html");
+    response.setBody("<html><body><h1>501 Not Implemented</h1><p>POST requests are not yet implemented</p></body></html>");
+}
+
+void Client::handleDeleteRequest(const HttpRequest& request,
+                                 LocationConfig* location,
+                                 HttpResponse& response) {
+    (void)request;
+    (void)location;
+    response.setStatus(501);
+    response.setContentType("text/html");
+    response.setBody("<html><body><h1>501 Not Implemented</h1><p>DELETE requests are not yet implemented</p></body></html>");
+}
+
+void Client::serveFile(const std::string& filepath, HttpResponse& response) {
+    std::ifstream file(filepath.c_str(), std::ios::binary);
+    if (!file) {
+        response = HttpResponse::makeError(500, "Cannot open file");
+        return;
+    }
+    std::string content((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+    std::string extension = getFileExtension(filepath);
+    std::string mime_type = HttpResponse::getMimeType(extension);
+    
+    response.setStatus(200);
+    response.setContentType(mime_type);
+    response.setBody(content);
+    
+    struct stat file_stat;
+    if (stat(filepath.c_str(), &file_stat) == 0)
+        response.setLastModified(file_stat.st_mtime);
+}
+
+std::string Client::getFileExtension(const std::string& filepath) {
+    size_t dot_pos = filepath.rfind('.');
+    if (dot_pos != std::string::npos)
+        return filepath.substr(dot_pos);
+    return "";
+}
+
+LocationConfig* Client::findMatchingLocation(const std::string& path) {
+    LocationConfig* best_match = NULL;
+    size_t best_match_length = 0;
+    
+    for (size_t i = 0; i < server_config->locations.size(); ++i) {
+        const std::string& loc_path = server_config->locations[i].path;
+        if (path.find(loc_path) == 0) {
+            if (loc_path.length() > best_match_length) {
+                best_match = const_cast<LocationConfig*>(&server_config->locations[i]);
+                best_match_length = loc_path.length();
+            }
+        }
+    }
+    return best_match;
+}
+
+void Client::buildErrorResponse(int code, const std::string& msg) {
+    HttpResponse response = HttpResponse::makeError(code, msg);
+    
+    std::map<int, std::string>::const_iterator it = server_config->error_pages.find(code);
+    if (it != server_config->error_pages.end()) {
+        std::string error_page_path = it->second;
+        std::ifstream file(error_page_path.c_str());
+        if (file) {
+            std::string content((std::istreambuf_iterator<char>(file)),
+                              std::istreambuf_iterator<char>());
+            response.setBody(content);
+        }
+    }
+    response_buffer = response.toString();
+    bytes_sent = 0;
 }
 
 void Client::buildSimpleResponse(const std::string& content) {
@@ -136,30 +282,48 @@ void Client::buildSimpleResponse(const std::string& content) {
     response << "Connection: close\r\n";
     response << "\r\n";
     response << content;
-    
     response_buffer = response.str();
     bytes_sent = 0;
 }
 
-void Client::buildErrorResponse(int code, const std::string& msg) {
+std::string Client::generateDirectoryListing(const std::string& dir_path, 
+                                            const std::string& uri_path) {
     std::stringstream html;
     html << "<!DOCTYPE html>\n";
-    html << "<html><head><title>" << code << " " << msg << "</title></head>\n";
+    html << "<html>\n";
+    html << "<head><title>Index of " << uri_path << "</title></head>\n";
     html << "<body>\n";
-    html << "<h1>" << code << " " << msg << "</h1>\n";
-    html << "<hr><p>webserv</p>\n";
-    html << "</body></html>\n";
+    html << "<h1>Index of " << uri_path << "</h1>\n";
+    html << "<hr>\n";
+    html << "<pre>\n";
+    DIR* dir = opendir(dir_path.c_str());
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL) {
+            std::string name = entry->d_name;
+            if (name == ".") continue;
+
+            std::string full_entry_path = dir_path + "/" + name;
+            struct stat entry_stat;
+            
+            if (stat(full_entry_path.c_str(), &entry_stat) == 0) {
+                if (S_ISDIR(entry_stat.st_mode))
+                    html << "<a href=\"" << uri_path << "/" << name << "/\">" 
+                         << name << "/</a>\n";
+                else
+                    html << "<a href=\"" << uri_path << "/" << name << "\">" 
+                         << name << "</a>    " 
+                         << entry_stat.st_size << " bytes\n";
+            }
+        }
+        closedir(dir);
+    }
     
-    std::stringstream response;
-    response << "HTTP/1.1 " << code << " " << msg << "\r\n";
-    response << "Content-Type: text/html\r\n";
-    response << "Content-Length: " << html.str().length() << "\r\n";
-    response << "Connection: close\r\n";
-    response << "\r\n";
-    response << html.str();
-    
-    response_buffer = response.str();
-    bytes_sent = 0;
+    html << "</pre>\n";
+    html << "<hr>\n";
+    html << "</body>\n";
+    html << "</html>\n";
+    return html.str();
 }
 
 bool Client::checkHeaders() {
@@ -171,7 +335,6 @@ size_t Client::getContentLength() const {
     size_t pos = request_buffer.find("Content-Length:");
     if (pos == std::string::npos)
         pos = request_buffer.find("content-length:");
-    
     if (pos != std::string::npos) {
         size_t end = request_buffer.find("\r\n", pos);
         if (end == std::string::npos)
@@ -189,9 +352,9 @@ size_t Client::getContentLength() const {
 
 size_t Client::getBodySize() const {
     size_t headers_end = request_buffer.find("\r\n\r\n");
+    
     if (headers_end != std::string::npos)
         return request_buffer.length() - (headers_end + 4);
-    
     headers_end = request_buffer.find("\n\n");
     if (headers_end != std::string::npos)
         return request_buffer.length() - (headers_end + 2);

@@ -3,7 +3,7 @@
 #include <iostream>
 int main(int argc, char** argv) {
     try {
-        std::string config_file = (argc > 1) ? argv[1] : "webserv.conf";
+        std::string config_file = (argc > 1) ? argv[1] : "simple.conf";
         Config config(config_file);
         
         const std::vector<ServerConfig>& servers = config.getServers();
