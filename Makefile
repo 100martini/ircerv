@@ -16,10 +16,12 @@ SERVER_SRCS = $(SERVER_DIR)/Server.cpp \
               $(SERVER_DIR)/Socket.cpp \
               $(SERVER_DIR)/Client.cpp \
               $(SERVER_DIR)/EventManager.cpp
-
+              
 HTTP_SRCS = $(HTTP_DIR)/HttpParser.cpp \
             $(HTTP_DIR)/HttpRequest.cpp \
-            $(HTTP_DIR)/HttpResponse.cpp
+            $(HTTP_DIR)/HttpResponse.cpp \
+            $(HTTP_DIR)/Methods.cpp \
+            $(HTTP_DIR)/HelpersMethods.cpp
 
 MAIN_SRCS = main.cpp
 SRCS = $(MAIN_SRCS) $(PARSING_SRCS) $(SERVER_SRCS) $(HTTP_SRCS)

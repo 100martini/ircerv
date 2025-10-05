@@ -201,12 +201,12 @@ std::string HttpResponse::getMimeType(const std::string& extension) {
 
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     
-    if (ext == "html" || ext == "htm") return "text/html";
-    if (ext == "css") return "text/css";
-    if (ext == "js") return "application/javascript";
-    if (ext == "json") return "application/json";
-    if (ext == "xml") return "application/xml";
-    if (ext == "txt") return "text/plain";
+    if (ext == "html" || ext == "htm") return "text/html; charset=utf-8";
+    if (ext == "css") return "text/css; charset=utf-8";
+    if (ext == "js") return "application/javascript; charset=utf-8";
+    if (ext == "json") return "application/json; charset=utf-8";
+    if (ext == "xml") return "application/xml; charset=utf-8";
+    if (ext == "txt") return "text/plain; charset=utf-8";
     if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
     if (ext == "png") return "image/png";
     if (ext == "gif") return "image/gif";
@@ -216,7 +216,7 @@ std::string HttpResponse::getMimeType(const std::string& extension) {
     if (ext == "zip") return "application/zip";
     if (ext == "tar") return "application/x-tar";
     if (ext == "gz") return "application/gzip";
-    
+
     return "application/octet-stream";
 }
 
@@ -245,14 +245,19 @@ HttpResponse HttpResponse::makeError(int code, const std::string& message) {
     std::stringstream html;
     html << "<!DOCTYPE html>\n";
     html << "<html>\n";
-    html << "<head><title>" << code << " " << msg << "</title></head>\n";
+    html << "<head><meta charset=\"UTF-8\"><title>" << code << " " << msg << "</title>\n";
+    html << "<style>body{background:#e74c3c;color:white;font-family:Arial;display:flex;"
+         << "flex-direction:column;align-items:center;justify-content:center;height:100vh;"
+         << "margin:0;font-size:24px;text-align:center;}"
+         << ".code{font-size:48px;font-weight:bold;margin-bottom:10px;}"
+         << ".message{font-size:20px;opacity:0.9;}</style>\n";
+    html << "</head>\n";
     html << "<body>\n";
-    html << "<h1>" << code << " " << msg << "</h1>\n";
-    html << "<hr>\n";
-    html << "<p>webserv/1.0</p>\n";
+    html << "<div class=\"code\">" << code << "</div>\n";
+    html << "<div class=\"message\">" << msg << "</div>\n";
     html << "</body>\n";
     html << "</html>\n";
-    response.setContentType("text/html");
+    response.setContentType("text/html; charset=utf-8");
     response.setBody(html.str());
     response.setConnection("close");
     return response;
@@ -271,7 +276,7 @@ HttpResponse HttpResponse::makeRedirect(int code, const std::string& location) {
     html << "<p>You are being redirected to <a href=\"" << location << "\">" << location << "</a></p>\n";
     html << "</body>\n";
     html << "</html>\n";
-    response.setContentType("text/html");
+    response.setContentType("text/html; charset=utf-8");
     response.setBody(html.str());
     response.setConnection("close");
     return response;

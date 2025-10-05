@@ -7,10 +7,13 @@ HttpParser::~HttpParser() {}
 int HttpParser::parseHttpRequest(const std::string& RequestData) {
     std::cout << "\n-----------------HTTP_PARSER--------------------\n";
     std::cout << "RECEIVED DATA:\n";
-    std::cout << RequestData << "\n\n";
+    //std::cout << RequestData << "\n\n";
     
+    //added for debugging
+    std::cout << "Received " << RequestData.length() << " bytes\n";
     buffer_ += RequestData;
     while (state_ != COMPLETE && state_ != ERROR && HttpParser::hasEnoughData()) {
+        std::cout << "State: " << state_ << ", Buffer size: " << buffer_.length() << "\n";
         switch (state_)
         {
             case PARSING_REQUEST_LINE:
@@ -22,7 +25,7 @@ int HttpParser::parseHttpRequest(const std::string& RequestData) {
                 break;
             case PARSING_HEADERS:
                 if (HttpParser::parseHeaders()) {
-                    if (httpRequest_.method_ == "POST" && httpRequest_.content_lenght_ > 0)
+                    if (httpRequest_.method_ == "POST" && httpRequest_.content_length_ > 0)
                         state_ = PARSING_BODY;
                     else {
                         state_ = COMPLETE;
@@ -51,6 +54,7 @@ int HttpParser::parseHttpRequest(const std::string& RequestData) {
         std::cout << httpRequest_ << "\n\n";
         std::cout << "------------------------------------\n";
     }   
+    std::cout << "Parser state: " << state_ << "\n";
     return state_;
 }
 
@@ -106,25 +110,32 @@ bool HttpParser::parseHeaders() {
 }
 
 bool HttpParser::parseBody() {
-    // TODO: add proper checks to ensure content-length is present and valid
-    size_t neededLenght = httpRequest_.content_lenght_ - bytes_read_;
-    size_t availble = buffer_.length();
+    size_t neededLength = httpRequest_.content_length_ - bytes_read_;
+    size_t available = buffer_.length();
 
-    if (availble >= neededLenght) {
-        httpRequest_.body_ += buffer_;
-        bytes_read_ += neededLenght;
-        return true;
+    if (available >= neededLength) {
+        // Take only what we need from the buffer
+        httpRequest_.body_ += buffer_.substr(0, neededLength);
+        // Remove the consumed data from buffer
+        buffer_ = buffer_.substr(neededLength);
+        bytes_read_ += neededLength;
+        return true;  // Body parsing complete
     } else {
+        // Take all available data
         httpRequest_.body_ += buffer_;
-        bytes_read_ += availble;
-        buffer_ = "";
-        return false;
+        bytes_read_ += available;
+        buffer_.clear();
+        return false; // Need more data
     }
 }
 
 bool HttpParser::hasEnoughData() {
+    // For body parsing, we don't need newlines - any data is enough to process
+    if (state_ == PARSING_BODY) {
+        return !buffer_.empty();
+    }
+    
+    // For headers and request line, we need newlines
     size_t newLineEx = buffer_.find("\r\n");
-    if (newLineEx == std::string::npos)
-        return false; // insufficient data to continue parsing
-    return true; // enough data
+    return newLineEx != std::string::npos;
 }

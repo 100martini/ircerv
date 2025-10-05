@@ -1,9 +1,9 @@
 #include "Client.hpp"
 #include "../http/HttpResponse.hpp"
+#include "../http/Methods.hpp"
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <dirent.h>
 #include <fstream>
 #include <sstream>
 #include <cstring>
@@ -23,7 +23,7 @@ Client::~Client() {
 }
 
 bool Client::readRequest() {
-    char buffer[4096];
+    char buffer[8192];
     ssize_t bytes = recv(fd, buffer, sizeof(buffer), 0);
     
     if (bytes > 0) {
@@ -62,7 +62,6 @@ bool Client::readRequest() {
                 default:
                     break;
             }
-            
             buildErrorResponse(error_code, error_msg);
             state = SENDING_RESPONSE;
             return false;
@@ -80,8 +79,7 @@ bool Client::sendResponse() {
     if (response_buffer.empty())
         return true;
     
-    ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
-                        response_buffer.length() - bytes_sent, 0);
+    ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, response_buffer.length() - bytes_sent, 0);
 
     if (bytes > 0) {
         bytes_sent += bytes;
@@ -120,15 +118,24 @@ void Client::processRequest() {
     if (location->methods.find(method) == location->methods.end()) {
         response.setStatus(405);
         std::vector<std::string> allowed_methods(location->methods.begin(), 
-                                                 location->methods.end());
+                                                location->methods.end());
         response.setAllow(allowed_methods);
-        response.setContentType("text/html");
+        response.setContentType("text/html; charset=utf-8");
         std::stringstream html;
         html << "<!DOCTYPE html>\n";
-        html << "<html><head><title>405 Method Not Allowed</title></head>\n";
-        html << "<body><h1>405 Method Not Allowed</h1>\n";
-        html << "<p>The requested method " << method << " is not allowed for this resource.</p>\n";
-        html << "</body></html>\n";
+        html << "<html>\n";
+        html << "<head><meta charset=\"UTF-8\"><title>405 Method Not Allowed</title>\n";
+        html << "<style>body{background:#e74c3c;color:white;font-family:Arial;display:flex;"
+            << "flex-direction:column;align-items:center;justify-content:center;height:100vh;"
+            << "margin:0;font-size:24px;text-align:center;}"
+            << ".code{font-size:48px;font-weight:bold;margin-bottom:10px;}"
+            << ".message{font-size:20px;opacity:0.9;}</style>\n";
+        html << "</head>\n";
+        html << "<body>\n";
+        html << "<div class=\"code\">405</div>\n";
+        html << "<div class=\"message\">Method Not Allowed</div>\n";
+        html << "</body>\n";
+        html << "</html>\n";
         response.setBody(html.str());
         response_buffer = response.toString();
         state = SENDING_RESPONSE;
@@ -144,101 +151,14 @@ void Client::processRequest() {
     }
     
     if (method == "GET")
-        handleGetRequest(request, location, response);
+        handleGet(request, location, response);
     else if (method == "POST")
-        handlePostRequest(request, location, response);
+        handlePost(request, location, server_config, response);
     else if (method == "DELETE")
-        handleDeleteRequest(request, location, response);
+        handleDelete(request, location, response);
+    
     response_buffer = response.toString();
     state = SENDING_RESPONSE;
-}
-
-void Client::handleGetRequest(const HttpRequest& request, 
-                              LocationConfig* location, 
-                              HttpResponse& response) {
-    std::string full_path = location->root + request.getPath();
-    
-    struct stat file_stat;
-    if (stat(full_path.c_str(), &file_stat) == -1) {
-        response = HttpResponse::makeError(404);
-        return;
-    }
-    
-    if (S_ISDIR(file_stat.st_mode)) {
-        if (full_path[full_path.length() - 1] != '/')
-            full_path += '/';
-        bool index_served = false;
-        if (!location->index.empty()) {
-            std::istringstream iss(location->index);
-            std::string index_file;
-            while (iss >> index_file) {
-                std::string index_path = full_path + index_file;
-                if (stat(index_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
-                    serveFile(index_path, response);
-                    index_served = true;
-                    break;
-                }
-            }
-        }
-        
-        if (!index_served) {
-            if (location->autoindex) {
-                std::string listing = generateDirectoryListing(full_path, request.getPath());
-                response.setStatus(200);
-                response.setContentType("text/html");
-                response.setBody(listing);
-            } else
-                response = HttpResponse::makeError(403, "Directory listing forbidden");
-        }
-    } else
-        serveFile(full_path, response);
-}
-
-void Client::handlePostRequest(const HttpRequest& request,
-                               LocationConfig* location,
-                               HttpResponse& response) {
-    (void)request;
-    (void)location;
-    response.setStatus(501);
-    response.setContentType("text/html");
-    response.setBody("<html><body><h1>501 Not Implemented</h1><p>POST requests are not yet implemented</p></body></html>");
-}
-
-void Client::handleDeleteRequest(const HttpRequest& request,
-                                 LocationConfig* location,
-                                 HttpResponse& response) {
-    (void)request;
-    (void)location;
-    response.setStatus(501);
-    response.setContentType("text/html");
-    response.setBody("<html><body><h1>501 Not Implemented</h1><p>DELETE requests are not yet implemented</p></body></html>");
-}
-
-void Client::serveFile(const std::string& filepath, HttpResponse& response) {
-    std::ifstream file(filepath.c_str(), std::ios::binary);
-    if (!file) {
-        response = HttpResponse::makeError(500, "Cannot open file");
-        return;
-    }
-    std::string content((std::istreambuf_iterator<char>(file)),
-                       std::istreambuf_iterator<char>());
-    std::string extension = getFileExtension(filepath);
-    std::string mime_type = HttpResponse::getMimeType(extension);
-    
-    response.setStatus(200);
-    response.setContentType(mime_type);
-    response.setBody(content);
-    
-    struct stat file_stat;
-    if (stat(filepath.c_str(), &file_stat) == 0)
-        response.setLastModified(file_stat.st_mtime);
-}
-
-std::string Client::getFileExtension(const std::string& filepath) {
-    size_t dot_pos = filepath.rfind('.');
-    if (dot_pos != std::string::npos)
-        return filepath.substr(dot_pos);
-    return "";
 }
 
 LocationConfig* Client::findMatchingLocation(const std::string& path) {
@@ -286,46 +206,6 @@ void Client::buildSimpleResponse(const std::string& content) {
     bytes_sent = 0;
 }
 
-std::string Client::generateDirectoryListing(const std::string& dir_path, 
-                                            const std::string& uri_path) {
-    std::stringstream html;
-    html << "<!DOCTYPE html>\n";
-    html << "<html>\n";
-    html << "<head><title>Index of " << uri_path << "</title></head>\n";
-    html << "<body>\n";
-    html << "<h1>Index of " << uri_path << "</h1>\n";
-    html << "<hr>\n";
-    html << "<pre>\n";
-    DIR* dir = opendir(dir_path.c_str());
-    if (dir) {
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != NULL) {
-            std::string name = entry->d_name;
-            if (name == ".") continue;
-
-            std::string full_entry_path = dir_path + "/" + name;
-            struct stat entry_stat;
-            
-            if (stat(full_entry_path.c_str(), &entry_stat) == 0) {
-                if (S_ISDIR(entry_stat.st_mode))
-                    html << "<a href=\"" << uri_path << "/" << name << "/\">" 
-                         << name << "/</a>\n";
-                else
-                    html << "<a href=\"" << uri_path << "/" << name << "\">" 
-                         << name << "</a>    " 
-                         << entry_stat.st_size << " bytes\n";
-            }
-        }
-        closedir(dir);
-    }
-    
-    html << "</pre>\n";
-    html << "<hr>\n";
-    html << "</body>\n";
-    html << "</html>\n";
-    return html.str();
-}
-
 bool Client::checkHeaders() {
     return request_buffer.find("\r\n\r\n") != std::string::npos ||
            request_buffer.find("\n\n") != std::string::npos;
@@ -344,7 +224,6 @@ size_t Client::getContentLength() const {
         size_t first = length_str.find_first_not_of(" \t");
         if (first != std::string::npos)
             length_str = length_str.substr(first);
-        
         return std::atoi(length_str.c_str());
     }
     return 0;
@@ -358,7 +237,6 @@ size_t Client::getBodySize() const {
     headers_end = request_buffer.find("\n\n");
     if (headers_end != std::string::npos)
         return request_buffer.length() - (headers_end + 2);
-    
     return 0;
 }
 

@@ -2,8 +2,8 @@
 
 HttpRequest::HttpRequest() 
     : method_(""), path_(""), version_(""), query_string_(""),
-         body_(""), content_lenght_found_(false){
-    NoneDupHeaders.insert("content_lenght");
+         body_(""), content_length_found_(false){
+    NoneDupHeaders.insert("content_length");
     NoneDupHeaders.insert("authorization");
     NoneDupHeaders.insert("form");
     NoneDupHeaders.insert("if-modified-since");
@@ -17,6 +17,7 @@ std::string HttpRequest::getMethod() const { return method_; }
 std::string HttpRequest::getPath() const { return path_; }
 std::string HttpRequest::getVersion() const { return version_; }
 std::string HttpRequest::getQueryString() const { return query_string_; }
+std::string HttpRequest::getBody() const { return body_; }
 
 bool HttpRequest::hasHeaders() const {
     if (!headers_.empty())
@@ -105,39 +106,31 @@ std::string HttpRequest::percentDecode(const std::string& encoded) {
 void HttpRequest::addHeader(const std::string& key, const std::string& value) {
     std::string newKey = HttpRequest::trim(key);
     std::string newValue = HttpRequest::trim(value);
-    char *tolEnd;
-    if (newKey.empty() || value.empty())
+    
+    if (newKey.empty() || newValue.empty())
         throw MalformedHeaderException("");
-    for (size_t i = 0; i < newValue.length(); i++) {
-        if ((newValue[i] < 32 || newValue[i] > 126) && newValue[i] != 9)
-        throw MalformedHeaderException("");
+    
+    // Convert key to lowercase for comparison
+    std::string lowerKey = newKey;
+    for (size_t i = 0; i < lowerKey.length(); i++) {
+        lowerKey[i] = std::tolower(lowerKey[i]);
     }
-    std::string validChars = "!#$%&'*+-.^_`|~";
-    for (size_t i = 0; i < newKey.length(); i++) {
-        if (!std::isalnum(newKey[i]))
-        {
-            if (validChars.find(newKey[i]) == std::string::npos)
-                throw InvalidFieldNameException("");
-            if (std::isalpha(newKey[i]))
-                newKey[i] = std::tolower(newKey[i]);
-        }
-        // TODO: 
-        //   - duplicate headers check completed
-        //   - for POST requests, verify content-length is present
-        //   - for each HTTP method, validate that all mandatory headers are included
-        if (newKey == "content-Length") {
-            content_lenght_found_ = true;
-            signed long contentLen = std::strtol(newValue.c_str(), &tolEnd, 10);
-            if (tolEnd == NULL || *tolEnd == '\0' || contentLen < 0)
-                throw InvalidContentLengthException("");
-            content_lenght_ = contentLen;
-        }
+    
+    // Handle Content-Length (case insensitive)
+    if (lowerKey == "content-length") {
+        content_length_found_ = true;
+        char *tolEnd;
+        signed long contentLen = std::strtol(newValue.c_str(), &tolEnd, 10);
+        if (*tolEnd != '\0' || contentLen < 0)
+            throw InvalidContentLengthException("");
+        content_length_ = contentLen;
     }
-    if (!content_lenght_found_ && method_ == "POST")
-        throw MissingContentLengthException("");
+    
+    // Check for duplicates
     if (HttpRequest::isDublicate(newKey))
         throw DuplicateHeaderException("");
-    headers_.insert(std::make_pair(newKey, newValue)); 
+    
+    headers_.insert(std::make_pair(newKey, newValue));
 }
 
 bool HttpRequest::isDublicate(const std::string& name) {

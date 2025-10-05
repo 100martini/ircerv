@@ -50,12 +50,6 @@ private:
     size_t getContentLength() const;
     size_t getBodySize() const;
     LocationConfig* findMatchingLocation(const std::string& path);
-    void handleGetRequest(const HttpRequest& request, LocationConfig* location, HttpResponse& response);
-    void handlePostRequest(const HttpRequest& request, LocationConfig* location, HttpResponse& response);
-    void handleDeleteRequest(const HttpRequest& request, LocationConfig* location, HttpResponse& response);
-    void serveFile(const std::string& filepath, HttpResponse& response);
-    std::string getFileExtension(const std::string& filepath);
-    std::string generateDirectoryListing(const std::string& dir_path, const std::string& uri_path);
 };
 
 #endif

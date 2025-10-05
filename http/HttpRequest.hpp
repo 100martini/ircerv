@@ -24,8 +24,8 @@ class HttpRequest {
 
     // body
     std::string body_;
-    bool content_lenght_found_;
-    size_t content_lenght_;
+    bool content_length_found_;
+    size_t content_length_;
 
     static const int MAX_URI_SIZE = 1024;
 
@@ -54,6 +54,7 @@ class HttpRequest {
     std::string getPath() const;
     std::string getVersion() const;
     std::string getQueryString() const;
+    std::string getBody() const;
 
     // utility methods
     bool hasHeaders() const;
