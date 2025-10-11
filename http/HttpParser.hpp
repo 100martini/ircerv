@@ -18,8 +18,9 @@ class HttpParser {
     ParserState state_;
     HttpRequest httpRequest_;
     size_t bytes_read_;
+    size_t content_length_;
+    bool content_length_found_;
     
-    // parsing functions
     bool parseRequestLine();
     bool parseHeaders();
     bool parseBody();
@@ -29,9 +30,8 @@ class HttpParser {
     HttpParser();
     ~HttpParser();
     
-    // main functions
     int parseHttpRequest(const std::string& RequestData);
-    void launch(const std::string& buffer);
+    void reset();
 
     const HttpRequest& getRequest() const { return httpRequest_; }
     ParserState getState() const { return state_; }

@@ -14,7 +14,8 @@ Client::Client(int _fd, const ServerConfig* config)
     : fd(_fd), 
       state(READING_REQUEST), 
       server_config(config),
-      bytes_sent(0) {
+      bytes_sent(0),
+      keep_alive(false) {
     last_activity = std::time(NULL);
 }
 
@@ -32,8 +33,10 @@ bool Client::readRequest() {
         try {
             int parser_state = http_parser.parseHttpRequest(std::string(buffer, bytes));
             
-            if (parser_state == COMPLETE)
+            if (parser_state == COMPLETE) {
+                state = PROCESSING_REQUEST;
                 return true;
+            }
             else if (parser_state == ERROR) {
                 buildErrorResponse(400, "Bad Request");
                 state = SENDING_RESPONSE;
@@ -41,28 +44,20 @@ bool Client::readRequest() {
             }
             return false;
             
+        } catch (const MissingContentLengthException& e) {
+            buildErrorResponse(411, "Length Required");
+            state = SENDING_RESPONSE;
+            return false;
+        } catch (const InvalidContentLengthException& e) {
+            buildErrorResponse(400, "Invalid Content-Length");
+            state = SENDING_RESPONSE;
+            return false;
+        } catch (const InvalidMethodName& e) {
+            buildErrorResponse(405, "Method Not Allowed");
+            state = SENDING_RESPONSE;
+            return false;
         } catch (const HttpRequestException& e) {
-            int error_code = 400;
-            std::string error_msg = "Bad Request";
-            
-            switch(e.error_code()) {
-                case INVALID_METHOD_NAME:
-                    error_code = 405;
-                    error_msg = "Method Not Allowed";
-                    break;
-                case MISSING_CONTENT_LENGTH:
-                case INVALID_CONTENT_LENGTH:
-                    error_code = 411;
-                    error_msg = "Length Required";
-                    break;
-                case DUPLICATE_HEADER:
-                    error_code = 400;
-                    error_msg = "Bad Request - Duplicate Header";
-                    break;
-                default:
-                    break;
-            }
-            buildErrorResponse(error_code, error_msg);
+            buildErrorResponse(400, "Bad Request");
             state = SENDING_RESPONSE;
             return false;
         }
@@ -71,8 +66,11 @@ bool Client::readRequest() {
         state = CLOSING;
         return false;
     }
-    else
+    else {
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+            state = CLOSING;
         return false;
+    }
 }
 
 bool Client::sendResponse() {
@@ -88,14 +86,24 @@ bool Client::sendResponse() {
         if (bytes_sent >= response_buffer.length()) {
             response_buffer.clear();
             bytes_sent = 0;
+            
+            if (keep_alive) {
+                http_parser.reset();
+                state = READING_REQUEST;
+                return false;
+            }
             return true;
         }
         return false;
     }
-    else if (bytes == 0)
+    else if (bytes == 0) {
         return false;
-    else
+    }
+    else {
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+            state = CLOSING;
         return false;
+    }
 }
 
 void Client::processRequest() {
@@ -105,11 +113,26 @@ void Client::processRequest() {
     std::string method = request.getMethod();
     std::string path = request.getPath();
     std::string version = request.getVersion();
+    std::string connection = request.getHeader("Connection");
+    
+    keep_alive = (version == "HTTP/1.1" && connection != "close") ||
+                 (version == "HTTP/1.0" && connection == "keep-alive");
     
     LocationConfig* location = findMatchingLocation(path);
     
     if (!location) {
-        response = HttpResponse::makeError(404);
+        location = findMatchingLocation("/");
+        if (!location) {
+            response = HttpResponse::makeError(404);
+            response_buffer = response.toString();
+            state = SENDING_RESPONSE;
+            return;
+        }
+    }
+    
+    if (location->redirect.first > 0) {
+        response = HttpResponse::makeRedirect(location->redirect.first, 
+                                             location->redirect.second);
         response_buffer = response.toString();
         state = SENDING_RESPONSE;
         return;
@@ -137,14 +160,17 @@ void Client::processRequest() {
         html << "</body>\n";
         html << "</html>\n";
         response.setBody(html.str());
-        response_buffer = response.toString();
-        state = SENDING_RESPONSE;
-        return;
-    }
-    
-    if (location->redirect.first > 0) {
-        response = HttpResponse::makeRedirect(location->redirect.first, 
-                                             location->redirect.second);
+        
+        if (server_config->error_pages.find(405) != server_config->error_pages.end()) {
+            std::string error_page_path = server_config->error_pages.find(405)->second;
+            std::ifstream file(error_page_path.c_str());
+            if (file) {
+                std::string content((std::istreambuf_iterator<char>(file)),
+                                  std::istreambuf_iterator<char>());
+                response.setBody(content);
+            }
+        }
+        
         response_buffer = response.toString();
         state = SENDING_RESPONSE;
         return;
@@ -157,6 +183,21 @@ void Client::processRequest() {
     else if (method == "DELETE")
         handleDelete(request, location, response);
     
+    if (response.isError() && server_config->error_pages.find(response.getStatusCode()) != server_config->error_pages.end()) {
+        std::string error_page_path = server_config->error_pages.find(response.getStatusCode())->second;
+        std::ifstream file(error_page_path.c_str());
+        if (file) {
+            std::string content((std::istreambuf_iterator<char>(file)),
+                              std::istreambuf_iterator<char>());
+            response.setBody(content);
+        }
+    }
+    
+    if (!keep_alive)
+        response.setConnection("close");
+    else
+        response.setConnection("keep-alive");
+        
     response_buffer = response.toString();
     state = SENDING_RESPONSE;
 }
@@ -167,10 +208,20 @@ LocationConfig* Client::findMatchingLocation(const std::string& path) {
     
     for (size_t i = 0; i < server_config->locations.size(); ++i) {
         const std::string& loc_path = server_config->locations[i].path;
+        
+        if (loc_path == path) {
+            return const_cast<LocationConfig*>(&server_config->locations[i]);
+        }
+        
         if (path.find(loc_path) == 0) {
-            if (loc_path.length() > best_match_length) {
-                best_match = const_cast<LocationConfig*>(&server_config->locations[i]);
-                best_match_length = loc_path.length();
+            if (loc_path == "/" || 
+                (path.length() > loc_path.length() && path[loc_path.length()] == '/') ||
+                path.length() == loc_path.length()) {
+                
+                if (loc_path.length() > best_match_length) {
+                    best_match = const_cast<LocationConfig*>(&server_config->locations[i]);
+                    best_match_length = loc_path.length();
+                }
             }
         }
     }

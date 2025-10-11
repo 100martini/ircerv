@@ -27,6 +27,7 @@ private:
     const ServerConfig* server_config;
     size_t bytes_sent;
     HttpParser http_parser;
+    bool keep_alive;
     
 public:
     Client(int _fd, const ServerConfig* config);

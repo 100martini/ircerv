@@ -7,7 +7,19 @@
 #include <cstdio>
 
 void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response) {
-    std::string full_path = location->root + request.getPath();
+    std::string request_path = request.getPath();
+    std::string full_path;
+    
+    if (location->path != "/" && request_path.find(location->path) == 0) {
+        std::string relative_path = request_path.substr(location->path.length());
+        if (relative_path.empty())
+            relative_path = "/";
+        else if (relative_path[0] != '/')
+            relative_path = "/" + relative_path;
+        full_path = location->root + relative_path;
+    } else {
+        full_path = location->root + request_path;
+    }
     
     struct stat file_stat;
     if (stat(full_path.c_str(), &file_stat) == -1) {
@@ -46,7 +58,6 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
 void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response) {
     std::string content_type = request.getHeader("Content-Type");
     
-    //only block file uploads if upload_path is not set
     if (location->upload_path.empty() && content_type.find("multipart/form-data") != std::string::npos) {
         response.setStatus(403);
         response.setContentType("text/html; charset=utf-8");
@@ -54,7 +65,6 @@ void handlePost(const HttpRequest& request, LocationConfig* location, const Serv
         return;
     }
     
-    //if no upload_path and not a file upload it accepts the POST data
     if (location->upload_path.empty()) {
         response.setStatus(200);
         response.setContentType("text/html; charset=utf-8");
@@ -116,7 +126,18 @@ void handlePost(const HttpRequest& request, LocationConfig* location, const Serv
 
 void handleDelete(const HttpRequest& request, LocationConfig* location, HttpResponse& response) {
     std::string path = request.getPath();
-    std::string full_path = location->root + path;
+    std::string full_path;
+    
+    if (location->path != "/" && path.find(location->path) == 0) {
+        std::string relative_path = path.substr(location->path.length());
+        if (relative_path.empty())
+            relative_path = "/";
+        else if (relative_path[0] != '/')
+            relative_path = "/" + relative_path;
+        full_path = location->root + relative_path;
+    } else {
+        full_path = location->root + path;
+    }
     
     if (!isPathSafe(full_path, location->root)) {
         response = HttpResponse::makeError(403, "Forbidden");

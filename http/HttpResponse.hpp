@@ -65,6 +65,7 @@ public:
     void appendBody(const std::string& content);
     const std::string& getBody() const { return body_; }
     size_t getBodySize() const { return body_.size(); }
+    int getStatusCode() const { return status_code; }
     void setContentType(const std::string& type);
     void setContentLength(size_t length);
     void setConnection(const std::string& value);

@@ -45,6 +45,11 @@ std::string generateDirectoryListing(const std::string& dir_path, const std::str
     html << "<h1>Index of " << uri_path << "</h1>\n";
     html << "<hr>\n";
     html << "<pre>\n";
+    
+    std::string safe_uri = uri_path;
+    if (safe_uri[safe_uri.length() - 1] != '/')
+        safe_uri += '/';
+        
     DIR* dir = opendir(dir_path.c_str());
     if (dir) {
         struct dirent* entry;
@@ -57,10 +62,10 @@ std::string generateDirectoryListing(const std::string& dir_path, const std::str
             
             if (stat(full_entry_path.c_str(), &entry_stat) == 0) {
                 if (S_ISDIR(entry_stat.st_mode))
-                    html << "<a href=\"" << uri_path << "/" << name << "/\">" 
+                    html << "<a href=\"" << safe_uri << name << "/\">" 
                          << name << "/</a>\n";
                 else
-                    html << "<a href=\"" << uri_path << "/" << name << "\">" 
+                    html << "<a href=\"" << safe_uri << name << "\">" 
                          << name << "</a>    " 
                          << entry_stat.st_size << " bytes\n";
             }
@@ -127,12 +132,12 @@ bool parseMultipartFormData(const std::string& body, const std::string& boundary
         if (headers_end != std::string::npos) {
             std::string headers = part.substr(0, headers_end);
             size_t data_start = (part.substr(headers_end, 4) == "\r\n\r\n") ? headers_end + 4 : headers_end + 2;
-            std::string file_data = part.substr(data_start);
             
-            if (file_data.length() >= 2 && file_data.substr(file_data.length() - 2) == "\r\n")
-                file_data = file_data.substr(0, file_data.length() - 2);
-            else if (file_data.length() >= 1 && file_data.substr(file_data.length() - 1) == "\n")
-                file_data = file_data.substr(0, file_data.length() - 1);
+            size_t data_length = part.length() - data_start;
+            if (data_length >= 2 && part.substr(part.length() - 2) == "\r\n")
+                data_length -= 2;
+            else if (data_length >= 1 && part.substr(part.length() - 1) == "\n")
+                data_length -= 1;
             
             size_t filename_pos = headers.find("filename=\"");
             if (filename_pos != std::string::npos) {
@@ -142,7 +147,7 @@ bool parseMultipartFormData(const std::string& body, const std::string& boundary
                 
                 if (!filename.empty()) {
                     std::string filepath = upload_path + "/" + filename;
-                    if (saveUploadedFile(filepath, file_data))
+                    if (saveUploadedBinaryFile(filepath, part.c_str() + data_start, data_length))
                         uploaded_files.push_back(filename);
                 }
             }
@@ -185,6 +190,17 @@ bool saveUploadedFile(const std::string& filepath, const std::string& content) {
     return file.good();
 }
 
+bool saveUploadedBinaryFile(const std::string& filepath, const char* data, size_t length) {
+    std::ofstream file(filepath.c_str(), std::ios::binary);
+    if (!file)
+        return false;
+    
+    file.write(data, length);
+    file.close();
+
+    return file.good();
+}
+
 std::string extractBoundary(const std::string& content_type) {
     size_t boundary_pos = content_type.find("boundary=");
     if (boundary_pos == std::string::npos)
@@ -200,21 +216,38 @@ std::string extractBoundary(const std::string& content_type) {
 }
 
 bool isPathSafe(const std::string& full_path, const std::string& root) {
-    char resolved_path[PATH_MAX];
-    char resolved_root[PATH_MAX];
+    std::string normalized_path = full_path;
+    std::string normalized_root = root;
     
-    if (realpath(root.c_str(), resolved_root) == NULL)
+    if (normalized_root[normalized_root.length() - 1] != '/')
+        normalized_root += '/';
+    
+    std::vector<std::string> path_parts;
+    std::stringstream ss(full_path);
+    std::string part;
+    
+    while (std::getline(ss, part, '/')) {
+        if (part.empty() || part == ".")
+            continue;
+        if (part == "..") {
+            if (!path_parts.empty())
+                path_parts.pop_back();
+        } else {
+            path_parts.push_back(part);
+        }
+    }
+    
+    std::string resolved_path = "/";
+    for (size_t i = 0; i < path_parts.size(); i++) {
+        if (i > 0) resolved_path += "/";
+        resolved_path += path_parts[i];
+    }
+    
+    if (resolved_path.find(normalized_root) != 0)
         return false;
     
-    std::string parent_path = full_path;
-    size_t last_slash = parent_path.rfind('/');
-
-    if (last_slash != std::string::npos)
-        parent_path = parent_path.substr(0, last_slash);
-    if (realpath(parent_path.c_str(), resolved_path) == NULL)
+    if (resolved_path.find("/../") != std::string::npos)
         return false;
     
-    std::string path_str(resolved_path);
-    std::string root_str(resolved_root);
-    return path_str.find(root_str) == 0;
+    return true;
 }
