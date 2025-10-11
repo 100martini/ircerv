@@ -9,7 +9,7 @@ HttpRequest::HttpRequest()
     NoneDupHeaders.insert("if-modified-since");
     NoneDupHeaders.insert("referer");
     NoneDupHeaders.insert("user_agent");
-    NoneDupHeaders.insert("content_type");
+    NoneDupHeaders.insert("content-type");
 }
 HttpRequest::~HttpRequest(){}
 
@@ -27,13 +27,13 @@ bool HttpRequest::hasHeaders() const {
 
 std::string HttpRequest::getHeader(const std::string& headerName) const {
     if (!this->hasHeaders())
-        return NULL;
+        return "";
     std::map<std::string, std::string>::const_iterator it;
     for (it = headers_.begin(); it != headers_.end(); ++it) {
         if (it->first == headerName)
             return it->second;
     }
-    return NULL;
+    return "";
 }
 
 void HttpRequest::setMethod(const std::string& method) {

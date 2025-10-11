@@ -1,4 +1,5 @@
 #include "HelpersMethods.hpp"
+#include "HttpRequest.hpp"
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fstream>
@@ -8,7 +9,7 @@
 #include <unistd.h>
 #include <limits.h>
 
-void serveFile(const std::string& filepath, HttpResponse& response) {
+void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest const & request, LocationConfig *location) {
     std::ifstream file(filepath.c_str(), std::ios::binary);
     if (!file) {
         response = HttpResponse::makeError(500, "Cannot open file");
@@ -17,12 +18,17 @@ void serveFile(const std::string& filepath, HttpResponse& response) {
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     std::string extension = getFileExtension(filepath);
     std::string mime_type = HttpResponse::getMimeType(extension);
+    if (!extension.empty() && extension == ".py")
+    {
+        CGIHandler cgi(request, location, filepath);
+        content = cgi.execute(extension);
+        mime_type = "text/html; charset=utf-8";
+    }
     response.setStatus(200);
     response.setContentType(mime_type);
     response.setBody(content);
 
     struct stat file_stat;
-
     if (stat(filepath.c_str(), &file_stat) == 0)
         response.setLastModified(file_stat.st_mtime);
 }

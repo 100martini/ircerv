@@ -4,6 +4,7 @@ CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 PARSING_DIR = parsing
 SERVER_DIR = server
 HTTP_DIR = http
+CGI_DIR = cgi
 SRC_DIR = .
 OBJ_DIR = obj
 
@@ -23,8 +24,10 @@ HTTP_SRCS = $(HTTP_DIR)/HttpParser.cpp \
             $(HTTP_DIR)/Methods.cpp \
             $(HTTP_DIR)/HelpersMethods.cpp
 
+CGI_SRCS = $(CGI_DIR)/CGIHandler.cpp
+
 MAIN_SRCS = main.cpp
-SRCS = $(MAIN_SRCS) $(PARSING_SRCS) $(SERVER_SRCS) $(HTTP_SRCS)
+SRCS = $(MAIN_SRCS) $(PARSING_SRCS) $(SERVER_SRCS) $(HTTP_SRCS) $(CGI_SRCS)
 OBJS = $(SRCS:%.cpp=$(OBJ_DIR)/%.o)
 
 all: $(NAME)
