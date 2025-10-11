@@ -24,48 +24,57 @@ static std::string getExtension(const std::string& filepath) {
 
 void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response) {
     std::string request_path = request.getPath();
-    std::string full_path;
-    
-    if (location->path != "/" && request_path.find(location->path) == 0) {
-        std::string relative_path = request_path.substr(location->path.length());
-        if (relative_path.empty())
-            relative_path = "/";
-        else if (relative_path[0] != '/')
-            relative_path = "/" + relative_path;
-        full_path = location->root + relative_path;
-    } else {
-        full_path = location->root + request_path;
-    }
+    std::string full_path = location->root + request_path;
+
+    // std::cout << "DEBUG:: request_path = " << request_path << std::endl;
+    // std::cout << "DEBUG:: location->root = " << location->root << std::endl;
+    // std::cout << "DEBUG:: location->path = " << location->path << std::endl;
+    // std::cout << "DEBUG:: full_path = " << full_path << std::endl;
 
     if (!location->cgi.empty() && isCGIScript(full_path, location->cgi)) {
-        std::string extension = getExtension(full_path);
-        CGIHandler cgi(request, location, full_path);
-        std::string cgi_output = cgi.execute(extension);
-        if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
-            response = HttpResponse::makeError(500, "CGI execution failed");
+        //std::cout << "DEBUG:: Detected as CGI script" << std::endl;
+        struct stat file_stat;
+        if (stat(full_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
+            //std::cout << "DEBUG:: CGI file exists and is not a directory" << std::endl;
+            std::string extension = getExtension(full_path);
+            //std::cout << "DEBUG:: extension = " << extension << std::endl;
+            CGIHandler cgi(request, location, full_path);
+            std::string cgi_output = cgi.execute(extension);
+            if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
+                response = HttpResponse::makeError(500, "CGI execution failed");
+                return;
+            }
+            response.setStatus(200);
+            response.setContentType("text/html; charset=utf-8");
+            response.setBody(cgi_output);
             return;
-        }
-        response.setStatus(200);
-        response.setContentType("text/html; charset=utf-8");
-        response.setBody(cgi_output);
-        return;
+        } 
+        //else
+            //std::cout << "DEBUG:: CGI file does not exist or is a directory" << std::endl;
     }
+    //else
+    //     std::cout << "DEBUG:: Not a CGI script" << std::endl;
     
     struct stat file_stat;
     if (stat(full_path.c_str(), &file_stat) == -1) {
+        //std::cout << "DEBUG:: File not found: " << full_path << std::endl;
         response = HttpResponse::makeError(404);
         return;
     }
     if (S_ISDIR(file_stat.st_mode)) {
+        //std::cout << "DEBUG:: Is a directory" << std::endl;
         if (full_path[full_path.length() - 1] != '/')
             full_path += '/';
         bool index_served = false;
         if (!location->index.empty()) {
+            //std::cout << "DEBUG:: Looking for index files: " << location->index << std::endl;
             std::istringstream iss(location->index);
             std::string index_file;
             while (iss >> index_file) {
                 std::string index_path = full_path + index_file;
+                //std::cout << "DEBUG:: Trying index: " << index_path << std::endl;
                 if (stat(index_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
+                    //std::cout << "DEBUG:: Found index file: " << index_path << std::endl;
                     serveFile(index_path, response, request, location);
                     index_served = true;
                     break;
@@ -73,15 +82,17 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
             }
         }
         if (!index_served) {
+            //std::cout << "DEBUG:: No index served, autoindex = " << location->autoindex << std::endl;
             if (location->autoindex) {
                 std::string listing = generateDirectoryListing(full_path, request.getPath());
                 response.setStatus(200);
-                response.setContentType("text/html");
+                response.setContentType("text/html; charset=utf-8");
                 response.setBody(listing);
             } else
                 response = HttpResponse::makeError(403, "Directory listing forbidden");
         }
     } else
+        //std::cout << "DEBUG:: Is a regular file" << std::endl;
         serveFile(full_path, response, request, location);
 }
 
