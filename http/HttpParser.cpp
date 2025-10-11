@@ -19,9 +19,8 @@ int HttpParser::parseHttpRequest(const std::string& RequestData) {
         switch (state_)
         {
             case PARSING_REQUEST_LINE:
-                if (HttpParser::parseRequestLine()) {
+                if (HttpParser::parseRequestLine())
                     state_ = PARSING_HEADERS;
-                }
                 else 
                     break;
                 break;
@@ -32,14 +31,12 @@ int HttpParser::parseHttpRequest(const std::string& RequestData) {
                             state_ = ERROR;
                             return ERROR;
                         }
-                        if (content_length_ > 0) {
+                        if (content_length_ > 0)
                             state_ = PARSING_BODY;
-                        } else {
+                        else
                             state_ = COMPLETE;
-                        }
-                    } else {
+                    } else
                         state_ = COMPLETE;
-                    }
                 }
                 else
                     break;
@@ -60,9 +57,8 @@ int HttpParser::parseHttpRequest(const std::string& RequestData) {
 
 bool HttpParser::parseRequestLine() {
     size_t pos = buffer_.find("\r\n");
-    if (pos == std::string::npos) {
+    if (pos == std::string::npos)
         return false;
-    }
 
     std::string line = buffer_.substr(0, pos);
     buffer_ = buffer_.substr(pos + 2);
@@ -80,7 +76,6 @@ bool HttpParser::parseRequestLine() {
     httpRequest_.setMethod(line.substr(0, firstSpace));
     httpRequest_.handleURI(line.substr(firstSpace + 1, secondSpace - firstSpace - 1));
     httpRequest_.setVersion(line.substr(secondSpace + 1));
-
     return true;
 }
 
@@ -93,9 +88,8 @@ bool HttpParser::parseHeaders() {
         std::string line = buffer_.substr(0, pos);
         buffer_ = buffer_.substr(pos + 2);
 
-        if (line.empty()) {
+        if (line.empty())
             return true;
-        }
 
         size_t colonPos = line.find(':');
         if (colonPos == std::string::npos)
@@ -104,9 +98,8 @@ bool HttpParser::parseHeaders() {
         std::string value = line.substr(colonPos + 1);
         
         std::string lowerKey = key;
-        for (size_t i = 0; i < lowerKey.length(); i++) {
+        for (size_t i = 0; i < lowerKey.length(); i++)
             lowerKey[i] = std::tolower(lowerKey[i]);
-        }
         
         if (lowerKey == "content-length") {
             content_length_found_ = true;
@@ -138,15 +131,12 @@ bool HttpParser::parseBody() {
     httpRequest_.body_.append(buffer_.substr(0, to_read));
     buffer_.erase(0, to_read);
     bytes_read_ += to_read;
-    
     return bytes_read_ >= content_length_;
 }
 
 bool HttpParser::hasEnoughData() {
-    if (state_ == PARSING_BODY) {
+    if (state_ == PARSING_BODY)
         return !buffer_.empty();
-    }
-    
     size_t newLineEx = buffer_.find("\r\n");
     return newLineEx != std::string::npos;
 }
