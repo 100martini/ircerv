@@ -7,6 +7,21 @@
 #include <cerrno>
 #include <cstdio>
 
+static bool isCGIScript(const std::string& filepath, const std::map<std::string, std::string>& cgi_map) {
+    size_t dot_pos = filepath.rfind('.');
+    if (dot_pos == std::string::npos)
+        return false;
+    std::string extension = filepath.substr(dot_pos);
+    return cgi_map.find(extension) != cgi_map.end();
+}
+
+static std::string getExtension(const std::string& filepath) {
+    size_t dot_pos = filepath.rfind('.');
+    if (dot_pos == std::string::npos)
+        return "";
+    return filepath.substr(dot_pos);
+}
+
 void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response) {
     std::string request_path = request.getPath();
     std::string full_path;
@@ -22,14 +37,18 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
         full_path = location->root + request_path;
     }
 
-    if (location->cgi_enabled && isCGIScript(full_path, location->cgi_extension)) {
-        CGIHandler cgi(request, *location);
-        if (cgi.execute(full_path, response))
-            return;
-        else {
+    if (!location->cgi.empty() && isCGIScript(full_path, location->cgi)) {
+        std::string extension = getExtension(full_path);
+        CGIHandler cgi(request, location, full_path);
+        std::string cgi_output = cgi.execute(extension);
+        if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
             response = HttpResponse::makeError(500, "CGI execution failed");
             return;
         }
+        response.setStatus(200);
+        response.setContentType("text/html; charset=utf-8");
+        response.setBody(cgi_output);
+        return;
     }
     
     struct stat file_stat;
@@ -71,14 +90,18 @@ void handlePost(const HttpRequest& request, LocationConfig* location, const Serv
     
     std::string request_path = request.getPath();
     std::string full_path = location->root + request_path;
-    if (location->cgi_enabled && isCGIScript(full_path, location->cgi_extension)) {
-        CGIHandler cgi(request, *location);
-        if (cgi.execute(full_path, response))
-            return;
-        else {
+    if (!location->cgi.empty() && isCGIScript(full_path, location->cgi)) {
+        std::string extension = getExtension(full_path);
+        CGIHandler cgi(request, location, full_path);
+        std::string cgi_output = cgi.execute(extension);
+        if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
             response = HttpResponse::makeError(500, "CGI execution failed");
             return;
         }
+        response.setStatus(200);
+        response.setContentType("text/html; charset=utf-8");
+        response.setBody(cgi_output);
+        return;
     }
     
     if (location->upload_path.empty() && content_type.find("multipart/form-data") != std::string::npos) {

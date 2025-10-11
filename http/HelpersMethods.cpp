@@ -18,12 +18,13 @@ void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest 
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     std::string extension = getFileExtension(filepath);
     std::string mime_type = HttpResponse::getMimeType(extension);
-    if (!extension.empty() && extension == ".py")
-    {
+    
+    if (!extension.empty() && !location->cgi.empty() && location->cgi.find(extension) != location->cgi.end()) {
         CGIHandler cgi(request, location, filepath);
         content = cgi.execute(extension);
         mime_type = "text/html; charset=utf-8";
     }
+    
     response.setStatus(200);
     response.setContentType(mime_type);
     response.setBody(content);
