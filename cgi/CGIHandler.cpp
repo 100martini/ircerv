@@ -7,23 +7,20 @@
 #include <sched.h>
 #include <vector>
 
-CGIHandler::CGIHandler(HttpRequest const& req, std::map<std::string, std::string>header_)
-  : _request_method(req.getMethod()),
-  _query_string(req.getQueryString()),
-  _content_length(req.getHeader("content-length")),
-  _content_type(req.getHeader("_content_type")),
-  _body(req.getBody())
+CGIHandler::CGIHandler(HttpRequest const& req, LocationConfig* location, std::string const & filepath)
+  : 
+    _location(location),
+    _request_method(req.getMethod()),
+    _query_string(req.getQueryString()),
+    _content_length(req.getHeader("content-length")),
+    _content_type(req.getHeader("content-type")),
+    _script_filename(filepath),
+    _body(req.getBody())
 {}
 
-std::string CGIHandler::getInterpreter()
+std::string CGIHandler::getInterpreter(std::string const & extension)
 {
-  std::string interpreter;
-  if (_script_filename.find(".py") != std::string::npos) {
-    interpreter = "/usr/bin/python";
-  } else if (_script_filename.find(".php") != std::string::npos) {
-    interpreter = "/usr/bin/php-cgi";
-  }
-  return interpreter;
+  return _location->cgi[extension];
 }
 
 std::vector<std::string> CGIHandler::prepareEnv() {
@@ -34,11 +31,11 @@ std::vector<std::string> CGIHandler::prepareEnv() {
     env.push_back("QUERY_STRING=" + _query_string);
     env.push_back("CONTENT_TYPE=" + _content_type);
     env.push_back("CONTENT_LENGTH=" + _content_length);
-    // env.push_back("GATEWAY_INTERFACE=CGI/1.1");
-    // env.push_back("SERVER_PROTOCOL=HTTP/1.1");
-    // env.push_back("SERVER_SOFTWARE=BasicHTTPServer/1.0");
-    // env.push_back("REDIRECT_STATUS=200");
-    
+    env.push_back("GATEWAY_INTERFACE=CGI/1.0");
+    env.push_back("SERVER_PROTOCOL=HTTP/1.0");
+    env.push_back("SERVER_SOFTWARE=BasicHTTPServer/1.0");
+    env.push_back("REDIRECT_STATUS=200");
+
     // Add other headers with HTTP_ prefix
     return env;
 }
@@ -60,7 +57,7 @@ void CGIHandler::freeCharArray(char** arr) {
     delete[] arr;
 }
 
-std::string CGIHandler::execute()
+std::string CGIHandler::execute(std::string const & extension)
 {
   int pipeIn[2];
   int pipeOut[2];
@@ -86,7 +83,7 @@ std::string CGIHandler::execute()
     close(pipeOut[1]);
     std::vector<std::string> vec = prepareEnv();
     char **envp = vectorToCharArray(vec);
-    std::string interpreter = getInterpreter();
+    std::string interpreter = getInterpreter(extension);
     if (interpreter.empty())
     {
       char* argv[] = { const_cast<char*>(_script_filename.c_str()), NULL };
@@ -115,13 +112,14 @@ std::string CGIHandler::execute()
   int status;
   waitpid(pid, &status, 0);
   if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-    if (output.find("Content-Type:") != std::string::npos ||
-        output.find("Content-type:") != std::string::npos) {
-      return "HTTP/1.1 200 OK\r\n" + output;
-    } else {
-      return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + output;
-    }
+    return output;
+    // if (output.find("Content-Type:") != std::string::npos ||
+    //     output.find("Content-type:") != std::string::npos) {
+    //   return "HTTP/1.0 200 OK\r\n" + output;
+    // } else {
+    //   return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n" + output;
+    // }
   }
 
-  return "HTTP/1.1 500 Internal Server Error\r\n\r\nCGI execution failed";
+  return "HTTP/1.0 500 Internal Server Error\r\n\r\nCGI execution failed";
 }

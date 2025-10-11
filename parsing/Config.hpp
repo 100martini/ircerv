@@ -21,7 +21,7 @@ struct LocationConfig {
     std::pair<int, std::string> redirect;
     std::map<std::string, std::string> cgi;
     size_t client_max_body_size;
-    bool has_body_count;
+    bool has_body_count; //👀
     
     LocationConfig();
 };

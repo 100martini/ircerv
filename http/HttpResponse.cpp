@@ -1,5 +1,6 @@
 #include "HttpResponse.hpp"
 #include <algorithm>
+#include <iostream>
 #include <cctype>
 #include <iomanip>
 #include <cstdio>

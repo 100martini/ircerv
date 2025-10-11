@@ -1,6 +1,7 @@
 #include "Config.hpp"
 #include "Parser.hpp"
 #include <fstream>
+#include <iostream>
 #include <sstream>
 
 LocationConfig::LocationConfig() 

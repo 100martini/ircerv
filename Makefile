@@ -27,7 +27,7 @@ HTTP_SRCS = $(HTTP_DIR)/HttpParser.cpp \
 CGI_SRCS = $(CGI_DIR)/CGIHandler.cpp
 
 MAIN_SRCS = main.cpp
-SRCS = $(MAIN_SRCS) $(PARSING_SRCS) $(SERVER_SRCS) $(HTTP_SRCS)
+SRCS = $(MAIN_SRCS) $(PARSING_SRCS) $(SERVER_SRCS) $(HTTP_SRCS) $(CGI_SRCS)
 OBJS = $(SRCS:%.cpp=$(OBJ_DIR)/%.o)
 
 all: $(NAME)

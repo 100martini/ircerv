@@ -1,4 +1,5 @@
 #include "Methods.hpp"
+#include "../cgi/CGIHandler.hpp"
 #include "HelpersMethods.hpp"
 #include <sys/stat.h>
 #include <sstream>
@@ -24,7 +25,7 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
             while (iss >> index_file) {
                 std::string index_path = full_path + index_file;
                 if (stat(index_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
-                    serveFile(index_path, response);
+                    serveFile(index_path, response, request, location);
                     index_served = true;
                     break;
                 }
@@ -40,7 +41,7 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
                 response = HttpResponse::makeError(403, "Directory listing forbidden");
         }
     } else
-        serveFile(full_path, response);
+      serveFile(full_path, response, request, location);
 }
 
 void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response) {
