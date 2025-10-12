@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# This script prints a message to the terminal
+echo "<h1>an attempt at bash unfortunately!</h1>"
