@@ -38,7 +38,7 @@ void Server::start() {
         
         try {
             sock->create();
-            sock->setReuseAddr(); //so you can start the server immediatly if you shut it down 
+            sock->setReuseAddr();
             sock->setNonBlocking(); 
             sock->bind(configs[i].host, configs[i].port);
             sock->listen();
@@ -81,13 +81,20 @@ void Server::run() {
                 else if (clients.find(event.fd) != clients.end()) {
                     Client* client = clients[event.fd];
                     
-                    if (event.error)
+                    if (event.error) {
                         removeClient(client);
+                    }
                     else {
-                        if (event.readable)
+                        if (event.readable && client->getState() == Client::READING_REQUEST)
                             handleClientRead(client);
-                        if (event.writable)
+                        if (event.writable && client->getState() == Client::SENDING_RESPONSE)
                             handleClientWrite(client);
+                            
+                        if (client->getState() == Client::PROCESSING_REQUEST) {
+                            client->processRequest();
+                            event_manager.setReadMonitoring(client->getFd(), false);
+                            event_manager.setWriteMonitoring(client->getFd(), true);
+                        }
                     }
                 }
             }
@@ -116,10 +123,19 @@ void Server::acceptNewClient(int listen_fd) {
     if (!listen_socket)
         return;
     
-    while (true) {
+    int accepted_count = 0;
+    const int MAX_ACCEPT_PER_CYCLE = 10;
+    
+    while (accepted_count < MAX_ACCEPT_PER_CYCLE) {
         int client_fd = listen_socket->accept();
         if (client_fd == -1)
             break;
+        
+        if (clients.size() >= 1000) {
+            ::close(client_fd);
+            std::cout << "max clients reached, rejecting connection" << std::endl;
+            break;
+        }
         
         ServerConfig* config = fd_to_config[listen_fd];
         Client* client = new Client(client_fd, config);
@@ -129,6 +145,8 @@ void Server::acceptNewClient(int listen_fd) {
         
         std::cout << "new client connected: fd=" << client_fd 
                   << " on " << config->host << ":" << config->port << std::endl;
+        
+        accepted_count++;
     }
 }
 
@@ -140,9 +158,8 @@ void Server::handleClientRead(Client* client) {
         return;
     }
     
-    if (request_complete) {
+    if (request_complete && client->getState() == Client::PROCESSING_REQUEST) {
         client->processRequest();
-        
         event_manager.setReadMonitoring(client->getFd(), false);
         event_manager.setWriteMonitoring(client->getFd(), true);
     }
@@ -151,9 +168,17 @@ void Server::handleClientRead(Client* client) {
 void Server::handleClientWrite(Client* client) {
     bool response_complete = client->sendResponse();
     
-    if (client->getState() == Client::CLOSING || response_complete) {
+    if (client->getState() == Client::CLOSING) {
         removeClient(client);
         return;
+    }
+    
+    if (response_complete) {
+        removeClient(client);
+    }
+    else if (client->getState() == Client::READING_REQUEST) {
+        event_manager.setWriteMonitoring(client->getFd(), false);
+        event_manager.setReadMonitoring(client->getFd(), true);
     }
 }
 
