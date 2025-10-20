@@ -6,16 +6,16 @@
 #include <cstring>
 #include <sched.h>
 #include <vector>
+#include <sstream>
+#include <cctype>
 
-CGIHandler::CGIHandler(HttpRequest const& req, LocationConfig* location, std::string const & filepath)
+CGIHandler::CGIHandler(HttpRequest const& req, LocationConfig* location, std::string const & filepath, const ServerConfig* ServerConfig)
   : 
     _location(location),
-    _request_method(req.getMethod()),
-    _query_string(req.getQueryString()),
-    _content_length(req.getHeader("content-length")),
-    _content_type(req.getHeader("content-type")),
+    _request(req),
     _script_filename(filepath),
-    _body(req.getBody())
+    _body(req.getBody()),
+    servConfig(ServerConfig)
 {}
 
 std::string CGIHandler::getInterpreter(std::string const & extension)
@@ -23,20 +23,52 @@ std::string CGIHandler::getInterpreter(std::string const & extension)
   return _location->cgi[extension];
 }
 
+std::string convertHeaderName(const std::string& headerName) {
+  if (headerName.empty()) return std::string("");
+  std::string new_headerName;
+  new_headerName.reserve(headerName.length() + 5);
+  new_headerName = "HTTP_";
+  for (size_t i = 0; i < headerName.length(); ++i) {
+    if (isalpha(headerName[i]) && !isupper(headerName[i]))
+      new_headerName += std::toupper(headerName[i]);
+    else if (headerName[i] == '-')
+      new_headerName += '_';
+    else 
+      new_headerName += headerName[i];
+  }
+  return new_headerName;
+}
+
 std::vector<std::string> CGIHandler::prepareEnv() {
     std::vector<std::string> env;
-    
-    env.push_back("REQUEST_METHOD=" + _request_method);
-    env.push_back("SCRIPT_FILENAME=" + _script_filename);
-    env.push_back("QUERY_STRING=" + _query_string);
-    env.push_back("CONTENT_TYPE=" + _content_type);
-    env.push_back("CONTENT_LENGTH=" + _content_length);
     env.push_back("GATEWAY_INTERFACE=CGI/1.0");
     env.push_back("SERVER_PROTOCOL=HTTP/1.0");
-    env.push_back("SERVER_SOFTWARE=BasicHTTPServer/1.0");
-    env.push_back("REDIRECT_STATUS=200");
-
-    // Add other headers with HTTP_ prefix
+    env.push_back("SCRIPT_NAME=" + _script_filename);
+    env.push_back("REQUEST_METHOD=" + _request.getMethod());
+    env.push_back("QUERY_STRING=" + _request.getQueryString());
+    env.push_back("SERVER_NAME=" + servConfig->server_name);
+    
+    std::stringstream port_ss;
+    port_ss << servConfig->port;
+    env.push_back("SERVER_PORT=" + port_ss.str());
+    
+    env.push_back("SERVER_PROTOCOL=" + _request.getVersion());
+    env.push_back("REMOTE_ADDR=");
+    if (_request.getMethod() == "POST" && _request.getContentlength() > 0) {
+      env.push_back("CONTENT_TYPE=" + _request.getHeader("content-type"));
+      
+      std::stringstream length_ss;
+      length_ss << _request.getContentlength();
+      env.push_back("CONTENT_LENGTH=" + length_ss.str());
+    }
+    if (_request.hasHeaders()) {
+      std::map<std::string, std::string> request_headers = _request.getHeadersMap();
+      std::map<std::string, std::string>::const_iterator it;
+      for (it = request_headers.begin(); it != request_headers.end(); ++it) {
+        if (it->first != "content-type" && it->first != "content-length")
+          env.push_back(convertHeaderName(it->first) + "=" + it->second);      
+      }
+    }
     return env;
 }
 
@@ -100,7 +132,7 @@ std::string CGIHandler::execute(std::string const & extension)
   }
   close(pipeIn[0]);
   close(pipeOut[1]);
-  if (_request_method == "POST" && !_body.empty())
+  if (_request.getMethod() == "POST" && !_body.empty())
     write(pipeIn[1], _body.c_str(), _body.length());
   close(pipeIn[1]);
   std::string output;
@@ -113,12 +145,6 @@ std::string CGIHandler::execute(std::string const & extension)
   waitpid(pid, &status, 0);
   if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
     return output;
-    // if (output.find("Content-Type:") != std::string::npos ||
-    //     output.find("Content-type:") != std::string::npos) {
-    //   return "HTTP/1.0 200 OK\r\n" + output;
-    // } else {
-    //   return "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n" + output;
-    // }
   }
 
   return "HTTP/1.0 500 Internal Server Error\r\n\r\nCGI execution failed";

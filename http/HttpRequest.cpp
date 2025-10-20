@@ -162,9 +162,8 @@ void HttpRequest::printHeaders() const {
         return ;
     }
     std::map<std::string, std::string>::const_iterator it;
-    for (it = headers_.begin(); it != headers_.end(); ++it) {
+    for (it = headers_.begin(); it != headers_.end(); ++it)
         std::cout << it->first << ": " << it->second << "\n";
-    }
 }
 
 std::string HttpRequest::trim(const std::string& str) {

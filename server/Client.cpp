@@ -177,7 +177,7 @@ void Client::processRequest() {
     }
     
     if (method == "GET")
-        handleGet(request, location, response);
+        handleGet(request, location, response, server_config);
     else if (method == "POST")
         handlePost(request, location, server_config, response);
     else if (method == "DELETE")

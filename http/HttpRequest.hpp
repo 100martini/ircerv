@@ -62,6 +62,8 @@ class HttpRequest {
     void printHeaders() const;
 
     friend std::ostream& operator<<(std::ostream& os, const HttpRequest& request);
+    const std::map<std::string, std::string>& getHeadersMap() const { return headers_; }
+    size_t getContentlength() const { return content_length_; }
 };
 
 #endif

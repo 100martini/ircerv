@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <limits.h>
 
-void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest const & request, LocationConfig *location) {
+void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest const & request, LocationConfig *location, const ServerConfig* server_config) {
     std::ifstream file(filepath.c_str(), std::ios::binary);
     if (!file) {
         response = HttpResponse::makeError(500, "Cannot open file");
@@ -20,7 +20,7 @@ void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest 
     std::string mime_type = HttpResponse::getMimeType(extension);
     
     if (!extension.empty() && !location->cgi.empty() && location->cgi.find(extension) != location->cgi.end()) {
-        CGIHandler cgi(request, location, filepath);
+        CGIHandler cgi(request, location, filepath, server_config);
         content = cgi.execute(extension);
         mime_type = "text/html; charset=utf-8";
     }

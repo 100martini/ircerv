@@ -5,7 +5,7 @@
 #include "HttpResponse.hpp"
 #include "../cgi/CGIHandler.hpp"
 
-void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest const & request, LocationConfig* location);
+void serveFile(const std::string& filepath, HttpResponse& response, HttpRequest const & request, LocationConfig* location, const ServerConfig* server_config);
 std::string getFileExtension(const std::string& filepath);
 std::string generateDirectoryListing(const std::string& dir_path, const std::string& uri_path);
 bool ensureUploadDirectory(const std::string& path, HttpResponse& response);
