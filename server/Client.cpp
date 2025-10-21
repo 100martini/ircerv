@@ -63,12 +63,14 @@ bool Client::readRequest() {
         }
     }
     else if (bytes == 0) {
+        // connection closed by client
         state = CLOSING;
         return false;
     }
     else {
-        if (errno != EAGAIN && errno != EWOULDBLOCK)
-            state = CLOSING;
+        // bytes < 0 would block or error
+        // removed errno per subject requirements
+        state = CLOSING;
         return false;
     }
 }
@@ -77,7 +79,8 @@ bool Client::sendResponse() {
     if (response_buffer.empty())
         return true;
     
-    ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, response_buffer.length() - bytes_sent, 0);
+    ssize_t bytes = send(fd, response_buffer.c_str() + bytes_sent, 
+                         response_buffer.length() - bytes_sent, 0);
 
     if (bytes > 0) {
         bytes_sent += bytes;
@@ -92,16 +95,14 @@ bool Client::sendResponse() {
                 state = READING_REQUEST;
                 return false;
             }
-            return true;
+            return true; // close connection after response
         }
-        return false;
-    }
-    else if (bytes == 0) {
-        return false;
+        return false; // we still have data to send
     }
     else {
-        if (errno != EAGAIN && errno != EWOULDBLOCK)
-            state = CLOSING;
+        // bytes <= 0 connection issue, close it
+        // removed errno per subject requirements
+        state = CLOSING;
         return false;
     }
 }

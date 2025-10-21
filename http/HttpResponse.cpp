@@ -8,7 +8,7 @@ std::map<int, std::string> HttpResponse::status_messages;
 bool HttpResponse::messages_initialized = false;
 
 HttpResponse::HttpResponse() 
-    : status_code(200), status_message("OK"), version_("HTTP/1.1"), chunked(false) {
+    : status_code(200), status_message("OK"), version_("HTTP/1.0"), chunked(false) {
     if (!messages_initialized) {
         initStatusMessages();
         messages_initialized = true;

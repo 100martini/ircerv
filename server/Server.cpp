@@ -151,44 +151,57 @@ void Server::acceptNewClient(int listen_fd) {
 }
 
 void Server::handleClientRead(Client* client) {
+    if (!client) return;
+
     bool request_complete = client->readRequest();
-    
     if (client->getState() == Client::CLOSING) {
         removeClient(client);
         return;
     }
-    
+    // added check for processing state before calling processRequest()
     if (request_complete && client->getState() == Client::PROCESSING_REQUEST) {
         client->processRequest();
+        event_manager.setReadMonitoring(client->getFd(), false);
+        event_manager.setWriteMonitoring(client->getFd(), true);
+    }
+    else if (client->getState() == Client::SENDING_RESPONSE) {
         event_manager.setReadMonitoring(client->getFd(), false);
         event_manager.setWriteMonitoring(client->getFd(), true);
     }
 }
 
 void Server::handleClientWrite(Client* client) {
+    if (!client) return;
+    
     bool response_complete = client->sendResponse();
     
     if (client->getState() == Client::CLOSING) {
         removeClient(client);
         return;
     }
-    
-    if (response_complete) {
-        removeClient(client);
-    }
+    if (response_complete)
+        removeClient(client); // done, close connection
     else if (client->getState() == Client::READING_REQUEST) {
+        // back to reading
         event_manager.setWriteMonitoring(client->getFd(), false);
         event_manager.setReadMonitoring(client->getFd(), true);
     }
 }
 
 void Server::removeClient(Client* client) {
+    if (!client) return;
+    
     int fd = client->getFd();
-    
+    if (fd < 0) {
+        delete client;
+        return;
+    }
     std::cout << "client disconnected: fd=" << fd << std::endl;
-    
     event_manager.removeFd(fd);
-    clients.erase(fd);
+    // just making sure we erase from map
+    std::map<int, Client*>::iterator it = clients.find(fd);
+    if (it != clients.end())
+        clients.erase(it);
     delete client;
 }
 

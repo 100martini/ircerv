@@ -223,38 +223,41 @@ std::string extractBoundary(const std::string& content_type) {
 }
 
 bool isPathSafe(const std::string& full_path, const std::string& root) {
-    std::string normalized_path = full_path;
-    std::string normalized_root = root;
+    char resolved_full[PATH_MAX];
+    char resolved_root[PATH_MAX];
     
-    if (normalized_root[normalized_root.length() - 1] != '/')
-        normalized_root += '/';
+    // realpath returns null if path doesnt exist or cant be resolved
+    char* full_real = realpath(full_path.c_str(), resolved_full);
+    char* root_real = realpath(root.c_str(), resolved_root);
     
-    std::vector<std::string> path_parts;
-    std::stringstream ss(full_path);
-    std::string part;
-    
-    while (std::getline(ss, part, '/')) {
-        if (part.empty() || part == ".")
-            continue;
-        if (part == "..") {
-            if (!path_parts.empty())
-                path_parts.pop_back();
-        } else {
-            path_parts.push_back(part);
+    // if root doesn't exist, we have bigger problems
+    if (!root_real)
+        return false;
+    std::string root_str(resolved_root);
+    if (root_str[root_str.length() - 1] != '/')
+        root_str += '/';
+    // if full path doesnt exist yet (like for uploads)
+    if (!full_real) {
+        std::string parent = full_path;
+        size_t last_slash = parent.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            parent = parent.substr(0, last_slash);
+            if (parent.empty()) parent = "/";
+
+            char resolved_parent[PATH_MAX];
+            char* parent_real = realpath(parent.c_str(), resolved_parent);
+            if (!parent_real)
+                return false;
+            std::string parent_str(resolved_parent);
+            if (parent_str[parent_str.length() - 1] != '/')
+                parent_str += '/';
+            return parent_str.find(root_str) == 0;
         }
-    }
-    
-    std::string resolved_path = "/";
-    for (size_t i = 0; i < path_parts.size(); i++) {
-        if (i > 0) resolved_path += "/";
-        resolved_path += path_parts[i];
-    }
-    
-    if (resolved_path.find(normalized_root) != 0)
         return false;
-    
-    if (resolved_path.find("/../") != std::string::npos)
-        return false;
-    
-    return true;
+    }
+    std::string full_str(resolved_full);
+    if (full_str[full_str.length() - 1] != '/')
+        full_str += '/';
+        
+    return full_str.find(root_str) == 0;
 }

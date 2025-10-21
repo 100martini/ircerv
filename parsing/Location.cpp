@@ -65,6 +65,9 @@ LocationConfig Parser::parseLocation(std::ifstream& file, const std::string& pat
             location.root = Utils::removeSemicolon(location.root);
             if (location.root.empty())
                 throw ConfigException("root directive requires a path");
+            // ensuring that root path doesn't end with / unless it's just /
+            if (location.root.length() > 1 && location.root[location.root.length() - 1] == '/')
+                location.root = location.root.substr(0, location.root.length() - 1);
         }
         else if (directive == "index") {
             std::string idx;

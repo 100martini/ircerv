@@ -24,7 +24,22 @@ static std::string getExtension(const std::string& filepath) {
 
 void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response, const ServerConfig* server_config) {
     std::string request_path = request.getPath();
-    std::string full_path = location->root + request_path;
+    
+    // still testing, kan essayer n9ad full path properly
+    std::string full_path;
+    if (location->path == "/")
+        full_path = location->root + request_path;
+    else {
+        // removed location prefix from request path
+        if (request_path.find(location->path) == 0) {
+            std::string relative = request_path.substr(location->path.length());
+            if (relative.empty() || relative[0] != '/')
+                relative = "/" + relative;
+            full_path = location->root + relative;
+        } 
+        else
+            full_path = location->root + request_path;
+    }
 
     // std::cout << "DEBUG:: request_path = " << request_path << std::endl;
     // std::cout << "DEBUG:: location->root = " << location->root << std::endl;
@@ -91,9 +106,10 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
             } else
                 response = HttpResponse::makeError(403, "Directory listing forbidden");
         }
-    } else
+    } else {
         //std::cout << "DEBUG:: Is a regular file" << std::endl;
         serveFile(full_path, response, request, location, server_config);
+    }
 }
 
 void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response) {
