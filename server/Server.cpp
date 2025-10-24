@@ -97,6 +97,10 @@ void Server::run() {
                         }
                     }
                 }
+                else if (active_cgis.find(event.fd) != active_cgis.end()) {
+                    // Handle CGI pipe
+                    handleGCIEventPipe(event.fd, event);
+                }
             }
         }
         
@@ -161,6 +165,14 @@ void Server::handleClientRead(Client* client) {
     // added check for processing state before calling processRequest()
     if (request_complete && client->getState() == Client::PROCESSING_REQUEST) {
         client->processRequest();
+
+        if (client->getState() == Client::CGI_IN_PROGRESS) {
+            executeCGI(client);
+            event_manager.setReadMonitoring(client->getFd(), false);
+            event_manager.setWriteMonitoring(client->getFd(), false);
+            return ;
+        }
+
         event_manager.setReadMonitoring(client->getFd(), false);
         event_manager.setWriteMonitoring(client->getFd(), true);
     }
@@ -224,4 +236,239 @@ ServerConfig* Server::getConfigForListenFd(int fd) {
     if (it != fd_to_config.end())
         return it->second;
     return NULL;
+}
+
+// Need more refining 
+void Server::executeCGI(Client* client) {
+    int pipeIn[2];
+    int pipeOut[2];
+    pid_t pid;
+
+    if (pipe(pipeIn) == -1 || pipe(pipeOut) == -1)
+        throw std::runtime_error("pipe failed");   
+
+    if (!setFdNonBlocking(pipeOut[0]) || !setFdNonBlocking(pipeIn[1])) {
+        close(pipeIn[0]); close(pipeIn[1]);
+        close(pipeOut[0]); close(pipeOut[1]);
+        throw std::runtime_error("fcntl failed");
+    }
+
+    pid = fork();
+    if (pid == -1) {
+        close(pipeIn[0]); close(pipeIn[1]);
+        close(pipeOut[0]); close(pipeOut[1]);
+        throw std::runtime_error("fork failed");
+    }
+    if (pid == 0) {
+        // CHILD PROCESS
+        close(pipeIn[1]);
+        close(pipeOut[0]);
+
+        dup2(pipeIn[0], STDIN_FILENO);
+        dup2(pipeOut[1], STDOUT_FILENO);
+
+        close(pipeIn[0]);
+        close(pipeOut[1]);
+
+        const std::string& fullPath = client->getCGIFullPath();
+        std::cerr << "CGI FULL PATH : " << fullPath << std::endl; 
+        std::vector<std::string> env_vect = prepareEnv(client->getCGIRequest(), client->getServerConfig(), fullPath);
+        char **envp = vectorToCharArray(env_vect);
+        std::string interpreter = client->getCGILocation()->cgi[client->getCGIExtension()];
+        if (interpreter.empty()) {
+            char* argv[] = { const_cast<char*>(fullPath.c_str()), NULL };
+            execve(fullPath.c_str(), argv, envp);
+        } else {
+            char* argv[] = {
+                const_cast<char*>(interpreter.c_str()),
+                const_cast<char*>(fullPath.c_str()),
+                NULL
+            };
+            execve(interpreter.c_str(), argv, envp);
+        }
+        freeCharArray(envp);
+        exit(1);
+    }
+    // PARENT PROCESS
+    close(pipeIn[0]);
+    close(pipeOut[1]);
+
+    // Create CGI tracker
+    CGIProcess *cgi = new CGIProcess();
+    cgi->pid = pid;
+    cgi->pipeIn = pipeIn[1];
+    cgi->pipeOut = pipeOut[0];
+    cgi->client_fd = client->getFd();
+    cgi->post_body = client->getCGIRequest()->getBody();
+    cgi->bytes_written = 0;
+    cgi->cgi_output = "";
+    cgi->start_time = time(NULL);
+    cgi->stdin_closed = false;
+    cgi->error = false;
+    
+    // Add pipes to epoll
+    active_cgis[pipeOut[0]] = cgi;
+    event_manager.addFd(pipeOut[0], true, false);
+    if (!cgi->post_body.empty()) {
+        active_cgis[pipeIn[1]] = cgi;
+        event_manager.addFd(pipeIn[1], false, true);
+    }
+}
+
+void Server::handleGCIEventPipe(int fd, const EventManager::Event& event) {
+    CGIProcess* cgi_ptr = NULL;
+    for (std::map<int, CGIProcess*>::iterator it = active_cgis.begin();
+        it != active_cgis.end(); ++it) {
+        if (it->second->pipeOut == fd || it->second->pipeIn == fd) {
+            cgi_ptr = it->second;
+            break;
+        }
+    }
+    if (!cgi_ptr) return;
+  
+    // Hadchi lahma 3raft ach andir fih
+    // if (event.error) {
+    //     // std::cerr << "ER!!!!!!!!!!!!!\n";
+    //     // completeCGI(cgi);
+    //     // return ; // khasni wa9ila ndir chi tmajnina hna     
+    // }
+
+    if (event.readable)
+        readCGIOutput(cgi_ptr);
+
+    if (event.writable)
+        writeCGIInput(cgi_ptr);
+
+    // Check if process exited
+    int status;
+    pid_t result = waitpid(cgi_ptr->pid, &status, WNOHANG);
+    if (result > 0) {
+        if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+            cgi_ptr->error = true;
+            cgi_ptr->error_code = WEXITSTATUS(status);
+        }
+        completeCGI(cgi_ptr);
+    }
+}
+
+void Server::readCGIOutput(CGIProcess* cgi) {
+    char buffer[8192];
+    ssize_t bytes = read(cgi->pipeOut, buffer, sizeof(buffer));
+    if (bytes > 0)
+        cgi->cgi_output.append(buffer, bytes);
+    else if (bytes == 0) {
+        // EOF : CGI closed output
+        close(cgi->pipeOut);
+        event_manager.removeFd(cgi->pipeOut);
+    }
+    else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+        // fatal error
+        // makhsnach n3ayto 3la errno wra read/write ms khasni nchecki -1
+        return;
+    }
+}
+
+// testi POST b http://localhost:8080/form.html
+void Server::writeCGIInput(CGIProcess* cgi) {
+    if (cgi->stdin_closed || cgi->bytes_written >= cgi->post_body.length()) {
+        if (!cgi->stdin_closed) {
+            close(cgi->pipeIn);
+            event_manager.removeFd(cgi->pipeIn);
+            cgi->stdin_closed = true;
+        }
+        return ;
+    }
+
+    size_t remaining = cgi->post_body.length() - cgi->bytes_written;
+    const char* data = cgi->post_body.c_str() + cgi->bytes_written;
+    ssize_t written = write(cgi->pipeIn, data, remaining);
+    
+    if (written > 0) {
+        cgi->bytes_written += written;
+        if (cgi->bytes_written >= cgi->post_body.length()) {
+            close(cgi->pipeIn);
+            event_manager.removeFd(cgi->pipeIn);
+            cgi->stdin_closed = true;
+        }
+    }
+    else if (written == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // fatal error
+        // makhsnach n3ayto 3la errno wra read/write ms khasni nchecki -1
+        return ;
+    }
+}
+
+// handle cgi execution failed : done
+void Server::completeCGI(CGIProcess* cgi) {
+    Client* client = clients[cgi->client_fd];
+    HttpResponse response;
+    
+    event_manager.removeFd(cgi->pipeOut);
+    event_manager.removeFd(cgi->pipeIn);
+    close(cgi->pipeOut);
+    close(cgi->pipeIn);
+
+    // Errors check !
+    if (cgi->error || cgi->cgi_output.find("HTTP/1.0 500") == 0) {
+        if (cgi->error_code == 126)
+            response = HttpResponse::makeError(403, "CGI Permission denied");
+        else if (cgi->error_code == 127)
+            response = HttpResponse::makeError(404, "CGI Script not found");
+        response = HttpResponse::makeError(500, "CGI execution failed");
+    }
+    else {
+        // Parse CGI Output
+        response = processCGIOutput(cgi->cgi_output);
+    }
+    
+    client->setResponseBuffer(response.toString());
+    client->setState(Client::SENDING_RESPONSE);
+    event_manager.setWriteMonitoring(client->getFd(), true);
+    event_manager.setReadMonitoring(client->getFd(), false);
+
+    active_cgis.erase(cgi->pipeOut);
+    active_cgis.erase(cgi->pipeIn);
+
+    delete cgi;
+}
+
+// Need more testing !! (ma3t lach matidkholch bzzf lhad l function)
+void Server::checkCGITimeout() {
+    time_t timeout_ms = 30;
+    time_t current_time = time(NULL);
+
+    std::map<int, CGIProcess*>::iterator it = active_cgis.begin();
+    while (it != active_cgis.end()) {
+        CGIProcess* cgi = it->second;
+        time_t elapsed = current_time - cgi->start_time;
+
+        if (elapsed >= timeout_ms) {
+            std::map<int, CGIProcess*>::iterator next_it = it;
+            ++next_it;
+            // TIMEOUT: terminate CGI process
+            kill(cgi->pid, SIGKILL);
+            waitpid(cgi->pid, NULL, 0);
+
+            // Close pipes
+            close(cgi->pipeIn);
+            close(cgi->pipeOut);
+            event_manager.removeFd(cgi->pipeIn);
+            event_manager.removeFd(cgi->pipeOut);
+
+            // Send 500 response to client
+            Client* client = clients[cgi->client_fd];
+            HttpResponse response = HttpResponse::makeError(504, "CGI timeout");
+            client->setResponseBuffer(response.toString());
+            client->setState(Client::SENDING_RESPONSE);
+            event_manager.setWriteMonitoring(client->getFd(), true);
+            event_manager.setReadMonitoring(client->getFd(), false);
+            active_cgis.erase(cgi->pipeOut);
+            active_cgis.erase(cgi->pipeIn);
+            
+            delete cgi;
+            it = next_it;
+        } 
+        else 
+            ++it;
+    }
 }

@@ -6,8 +6,8 @@
 #include "HttpRequest.hpp"
 #include "HttpResponse.hpp"
 
-void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response, const ServerConfig* server_config);
-void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response);
+void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response, bool & cgi_requested);
+void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response, bool & cgi_requested);
 void handleDelete(const HttpRequest& request, LocationConfig* location, HttpResponse& response);
 
 #endif

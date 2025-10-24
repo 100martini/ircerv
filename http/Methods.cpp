@@ -1,5 +1,5 @@
 #include "Methods.hpp"
-#include "../cgi/CGIHandler.hpp"
+// #include "../cgi/CGIHandler.hpp"
 #include "HelpersMethods.hpp"
 #include <sys/stat.h>
 #include <sstream>
@@ -15,14 +15,14 @@ static bool isCGIScript(const std::string& filepath, const std::map<std::string,
     return cgi_map.find(extension) != cgi_map.end();
 }
 
-static std::string getExtension(const std::string& filepath) {
-    size_t dot_pos = filepath.rfind('.');
-    if (dot_pos == std::string::npos)
-        return "";
-    return filepath.substr(dot_pos);
-}
+// static std::string getExtension(const std::string& filepath) {
+//     size_t dot_pos = filepath.rfind('.');
+//     if (dot_pos == std::string::npos)
+//         return "";
+//     return filepath.substr(dot_pos);
+// }
 
-void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response, const ServerConfig* server_config) {
+void handleGet(const HttpRequest& request, LocationConfig* location, HttpResponse& response, bool & cgi_requested) {
     std::string request_path = request.getPath();
     
     // still testing, kan essayer n9ad full path properly
@@ -51,17 +51,19 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
         struct stat file_stat;
         if (stat(full_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
             //std::cout << "DEBUG:: CGI file exists and is not a directory" << std::endl;
-            std::string extension = getExtension(full_path);
-            //std::cout << "DEBUG:: extension = " << extension << std::endl;
-            CGIHandler cgi(request, location, full_path, server_config);
-            std::string cgi_output = cgi.execute(extension);
-            if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
-                response = HttpResponse::makeError(500, "CGI execution failed");
-                return;
-            }
-            response.setStatus(200);
-            response.setContentType("text/html; charset=utf-8");
-            response.setBody(cgi_output);
+            // std::string extension = getExtension(full_path);
+            // //std::cout << "DEBUG:: extension = " << extension << std::endl;
+            // CGIHandler cgi(request, location, full_path, server_config);
+            // std::string cgi_output = cgi.execute(extension);
+            // if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
+            //     response = HttpResponse::makeError(500, "CGI execution failed");
+            //     return;
+            // }
+            // response.setStatus(200);
+            // response.setContentType("text/html; charset=utf-8");
+            // response.setBody(cgi_output);
+            
+            cgi_requested = true;
             return;
         } 
         //else
@@ -90,7 +92,7 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
                 //std::cout << "DEBUG:: Trying index: " << index_path << std::endl;
                 if (stat(index_path.c_str(), &file_stat) == 0 && !S_ISDIR(file_stat.st_mode)) {
                     //std::cout << "DEBUG:: Found index file: " << index_path << std::endl;
-                    serveFile(index_path, response, request, location, server_config);
+                    serveFile(index_path, response);
                     index_served = true;
                     break;
                 }
@@ -108,26 +110,27 @@ void handleGet(const HttpRequest& request, LocationConfig* location, HttpRespons
         }
     } else {
         //std::cout << "DEBUG:: Is a regular file" << std::endl;
-        serveFile(full_path, response, request, location, server_config);
+        serveFile(full_path, response);
     }
 }
 
-void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response) {
+void handlePost(const HttpRequest& request, LocationConfig* location, const ServerConfig* server_config, HttpResponse& response, bool & cgi_requested) {
     std::string content_type = request.getHeader("Content-Type");
     
     std::string request_path = request.getPath();
     std::string full_path = location->root + request_path;
     if (!location->cgi.empty() && isCGIScript(full_path, location->cgi)) {
-        std::string extension = getExtension(full_path);
-        CGIHandler cgi(request, location, full_path, server_config);
-        std::string cgi_output = cgi.execute(extension);
-        if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
-            response = HttpResponse::makeError(500, "CGI execution failed");
-            return;
-        }
-        response.setStatus(200);
-        response.setContentType("text/html; charset=utf-8");
-        response.setBody(cgi_output);
+        // std::string extension = getExtension(full_path);
+        // CGIHandler cgi(request, location, full_path, server_config);
+        // std::string cgi_output = cgi.execute(extension);
+        // if (cgi_output.find("HTTP/1.1 500") == 0 || cgi_output.find("HTTP/1.0 500") == 0) {
+        //     response = HttpResponse::makeError(500, "CGI execution failed");
+        //     return;
+        // }
+        // response.setStatus(200);
+        // response.setContentType("text/html; charset=utf-8");
+        // response.setBody(cgi_output);
+        cgi_requested = true;
         return;
     }
     

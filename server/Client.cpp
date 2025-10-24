@@ -15,7 +15,8 @@ Client::Client(int _fd, const ServerConfig* config)
       state(READING_REQUEST), 
       server_config(config),
       bytes_sent(0),
-      keep_alive(false) {
+      keep_alive(false) ,
+      cgi_requested(false) {
     last_activity = std::time(NULL);
 }
 
@@ -92,6 +93,7 @@ bool Client::sendResponse() {
             
             if (keep_alive) {
                 http_parser.reset();
+                cgi_requested = false;
                 state = READING_REQUEST;
                 return false;
             }
@@ -105,6 +107,13 @@ bool Client::sendResponse() {
         state = CLOSING;
         return false;
     }
+}
+
+static std::string getExtension(const std::string& filepath) {
+    size_t dot_pos = filepath.rfind('.');
+    if (dot_pos == std::string::npos)
+        return "";
+    return filepath.substr(dot_pos);
 }
 
 void Client::processRequest() {
@@ -178,11 +187,40 @@ void Client::processRequest() {
     }
     
     if (method == "GET")
-        handleGet(request, location, response, server_config);
+        handleGet(request, location, response, cgi_requested);
     else if (method == "POST")
-        handlePost(request, location, server_config, response);
+        handlePost(request, location, server_config, response, cgi_requested);
     else if (method == "DELETE")
         handleDelete(request, location, response);
+
+    if (cgi_requested) {
+        cgi_request = &request;
+        cgi_location = location;
+        
+        
+        std::string full_path;
+        std::string request_path = request.getPath();
+        if (location->path == "/")
+            full_path = location->root + request_path;
+        else {
+            // removed location prefix from request path
+            if (request_path.find(location->path) == 0) {
+                std::string relative = request_path.substr(location->path.length());
+                if (relative.empty() || relative[0] != '/')
+                    relative = "/" + relative;
+                full_path = location->root + relative;
+            } 
+            else
+                full_path = location->root + request_path;
+        }
+        
+        cgi_full_path = full_path;
+       
+        cgi_extension = getExtension(cgi_full_path);
+        state = CGI_IN_PROGRESS;
+        response_buffer.clear();
+        return ;
+    }
     
     if (response.isError() && server_config->error_pages.find(response.getStatusCode()) != server_config->error_pages.end()) {
         std::string error_page_path = server_config->error_pages.find(response.getStatusCode())->second;

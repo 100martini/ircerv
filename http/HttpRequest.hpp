@@ -39,7 +39,6 @@ class HttpRequest {
 
     // helper functions
     std::string percentDecode(const std::string& encoded);
-    std::string trim(const std::string& str);
     bool isDublicate(const std::string& name);
     
     public:
@@ -60,6 +59,8 @@ class HttpRequest {
     bool hasHeaders() const;
     std::string getHeader(const std::string& headerName) const;
     void printHeaders() const;
+
+    static std::string trim(const std::string& str);
 
     friend std::ostream& operator<<(std::ostream& os, const HttpRequest& request);
     const std::map<std::string, std::string>& getHeadersMap() const { return headers_; }

@@ -9,9 +9,24 @@
 #include "Client.hpp"
 #include "EventManager.hpp"
 #include "../parsing/Config.hpp"
+#include "CGIHelpers.hpp"
 #include <vector>
 #include <map>
+#include <time.h>
 
+struct CGIProcess {
+    pid_t pid;
+    int pipeIn;
+    int pipeOut;
+    int client_fd;
+    std::string post_body;
+    size_t bytes_written;
+    std::string cgi_output;
+    time_t start_time;
+    bool stdin_closed;
+    bool error;
+    int error_code;
+};
 
 class Server {
 private:
@@ -39,6 +54,16 @@ private:
     void checkTimeouts();
     
     ServerConfig* getConfigForListenFd(int fd);
+
+    // CGI TOOLS
+    std::map<int, CGIProcess*> active_cgis;
+
+    void executeCGI(Client* client);
+    void handleGCIEventPipe(int fd, const EventManager::Event& event);
+    void readCGIOutput(CGIProcess* cgi);
+    void writeCGIInput(CGIProcess* cgi);
+    void completeCGI(CGIProcess* cgi);
+    void checkCGITimeout();
 };
 
 #endif
