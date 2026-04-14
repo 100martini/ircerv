@@ -1,6 +1,6 @@
 # ircserv 📡
 
-> irc server from scratch. c++98. no boost. no mercy.
+> irc server from scratch. c++98. no boost. no .
 
 a fully functional irc server built in c++98. connects with any real irc client, handles channels, operators, modes, and everything else you'd expect from a chat server built in 1988.
 
